@@ -24,10 +24,6 @@ jobs:
           echo "SDK: $SDK"
           echo "Min version: $MIN_VER"
           
-<<<<<<< HEAD
-          # Build the dylib
-=======
->>>>>>> parent of 0f247f3 (Fix: simplify injection and add build diagnostics)
           clang \
             -arch arm64 \
             -isysroot "$SDK" \
