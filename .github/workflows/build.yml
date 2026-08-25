@@ -1,0 +1,56 @@
+# GitHub Actions workflow for building dxctx_gm.dylib
+
+name: Build DXCT GM Hook
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build dylib
+        run: |
+          set -e
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
+          
+          echo "SDK: $SDK"
+          echo "Min version: $MIN_VER"
+          
+<<<<<<< HEAD
+          # Build the dylib
+=======
+>>>>>>> parent of 0f247f3 (Fix: simplify injection and add build diagnostics)
+          clang \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -iframework "$SDK/System/Library/Frameworks" \
+            -iframework "$SDK/Library/Frameworks" \
+            -I src \
+            -O2 \
+            -Wall \
+            -framework JavaScriptCore \
+            -dynamiclib \
+            -o dxctx_gm.dylib \
+            src/fishhook.c \
+            src/Inject.jsb.c \
+            -Wl,-install_name,@rpath/dxctx_gm.dylib \
+            -mios-version-min=$MIN_VER
+          
+          echo "Build successful!"
+          file dxctx_gm.dylib
+          lipo -info dxctx_gm.dylib
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxctx_gm
+          path: dxctx_gm.dylib
+          retention-days: 7
