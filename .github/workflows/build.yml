@@ -15,21 +15,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Check SDK
+        run: |
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphoneos --show-sdk-version
+          xcode-select -p
+          clang --version
+          
       - name: Build dylib
         run: |
-          set -e
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
           
-          echo "SDK: $SDK"
+          echo "Building with SDK: $SDK"
           echo "Min version: $MIN_VER"
           
-          # Build the dylib
+          # List framework
+          ls -la "$SDK/System/Library/Frameworks/JavaScriptCore.framework"
+          
+          # Build
           clang \
             -arch arm64 \
             -isysroot "$SDK" \
             -iframework "$SDK/System/Library/Frameworks" \
-            -iframework "$SDK/Library/Frameworks" \
             -I src \
             -O2 \
             -Wall \
@@ -41,13 +49,6 @@ jobs:
             -Wl,-install_name,@rpath/dxctx_gm.dylib \
             -mios-version-min=$MIN_VER
           
-          echo "Build successful!"
+          echo "Build completed"
           file dxctx_gm.dylib
           lipo -info dxctx_gm.dylib
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dxctx_gm
-          path: dxctx_gm.dylib
-          retention-days: 7
