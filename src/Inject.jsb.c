@@ -1,2 +1,2 @@
-[CONTEXT OFFLOADED] Content (~1299 tokens, 4240 bytes) saved to: /var/minis/offloads/tools/file_write_48349c3f2e12.txt
+[CONTEXT OFFLOADED] Content (~1237 tokens, 4027 bytes) saved to: /var/minis/offloads/tools/file_write_4b44c1b07307.txt
 Use file_read tool to retrieve if needed.
