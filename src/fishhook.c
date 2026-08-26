@@ -12,5 +12,7 @@ int rebind_symbols_image(void* header, intptr_t slide, struct rebinding rebindin
   // Simplified - just return 0 for now
   (void)header;
   (void)slide;
+  (void)rebindings;
+  (void)rebindings_nel;
   return 0;
 }
