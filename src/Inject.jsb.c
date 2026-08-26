@@ -18,7 +18,7 @@
 #include <fcntl.h>
 #include <mach-o/dyld.h>
 #include <JavaScriptCore/JavaScriptCore.h>
-#include <objc/runtime.h>
+#include "fishhook.h"
 
 #define LOG_TAG "[DXCTGM]"
 #define LOG(fmt, ...) fprintf(stderr, LOG_TAG " " fmt "\n", ##__VA_ARGS__)
@@ -58,7 +58,6 @@ JSStringRef hook_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObject
                     LOG("Failed to open: %s", js_file);
                 }
             } else {
-                // Inject built-in GM panel
                 LOG("Injecting built-in GM panel");
             }
         }
@@ -95,7 +94,6 @@ static void dxct_gm_init() {
     rebindings[0].replaced = (void **)&original_JSEvaluateScript;
     
     // Call fishhook
-    extern void rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
     rebind_symbols(rebindings, 1);
     
     LOG("GM debugger ready");

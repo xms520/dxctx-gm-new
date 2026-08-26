@@ -1,5 +1,5 @@
 /*
- * fishhook.h - Header for fishhook symbol rebinding
+ * fishhook.h - Header for symbol rebinding
  */
 #ifndef fishhook_h
 #define fishhook_h
