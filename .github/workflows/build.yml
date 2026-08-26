@@ -1,17 +1,61 @@
 name: Build DXCT GM Hook
-on: push
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
 jobs:
   build:
-    runs-on: macOS-latest
+    runs-on: macos-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: |
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          clang -arch arm64 -isysroot "$SDK" -I src -framework JavaScriptCore -dynamiclib -o dxctx_gm.dylib src/fishhook.c src/Inject.jsb.c
-          ls -la dxctx_gm.dylib
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: dxctx_gm
-          path: dxctx_gm.dylib
+    - uses: actions/checkout@v4
+    
+    - name: Set up SDK
+      run: |
+        echo "Xcode version:"
+        xcodebuild -version
+        echo ""
+        echo "SDK path:"
+        xcrun --sdk iphoneos --show-sdk-path
+        echo ""
+        echo "Available SDKs:"
+        xcodebuild -showsdks | grep iphoneos
+    
+    - name: Build dylib
+      run: |
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
+        
+        echo "Building with SDK: $SDK"
+        echo "Minimum version: $MIN_VER"
+        
+        clang \
+          -arch arm64 \
+          -isysroot "$SDK" \
+          -iframework "$SDK/System/Library/Frameworks" \
+          -iframework "$SDK/Library/Frameworks" \
+          -I src \
+          -O2 \
+          -Wall \
+          -framework JavaScriptCore \
+          -dynamiclib \
+          -o dxctx_gm.dylib \
+          src/fishhook.c \
+          src/Inject.jsb.c \
+          -Wl,-install_name,@rpath/dxctx_gm.dylib \
+          -mios-version-min=$MIN_VER
+        
+        echo "Build completed!"
+        file dxctx_gm.dylib
+        lipo -info dxctx_gm.dylib
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dxctx_gm
+        path: dxctx_gm.dylib
+        retention-days: 7
