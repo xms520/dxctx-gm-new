@@ -1,0 +1,57 @@
+name: Build DXCT GM Dylib
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Build dylib
+      run: |
+        set -e
+        echo "Building arm64 dylib..."
+        
+        # Create output directory
+        mkdir -p build
+        
+        # Compile fishhook.c
+        clang -arch arm64 -framework Foundation -framework JavaScriptCore \
+          -c src/fishhook.c -o build/fishhook.o \
+          -I src \
+          -O2 -fPIC
+        
+        # Compile inject source
+        clang -arch arm64 -framework Foundation -framework JavaScriptCore \
+          -c src/Inject.jsb.c -o build/Inject.jsb.o \
+          -I src \
+          -O2 -fPIC \
+          -DJS_EXPORT=
+        
+        # Link dylib
+        clang -arch arm64 -shared \
+          build/fishhook.o build/Inject.jsb.o \
+          -o build/dxctx_gm.dylib \
+          -framework Foundation \
+          -framework JavaScriptCore \
+          -Wl,-install_name,@rpath/dxctx_gm.dylib
+        
+        # Verify
+        echo "Built dylib:"
+        file build/dxctx_gm.dylib
+        ls -la build/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dxctx_gm_dylib
+        path: build/dxctx_gm.dylib
+        retention-days: 7
