@@ -1,6 +1,4 @@
 // Inject.jsb.c - GM hook for 大侠闯天下
-// Hook JSEvaluateScript to inject GM debug panel
-
 #include <JavaScriptCore/JavaScriptCore.h>
 #include <dlfcn.h>
 #include <stdio.h>
