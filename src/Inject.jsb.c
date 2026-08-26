@@ -1,7 +1,7 @@
 /*
  * Inject.jsb.c - GM Debug Injection for 大侠闯天下 (Cocos2d-x JSB)
  *
- * Uses UIKit to create overlay GM panel (bypasses Cocos2d-x DOM limitation)
+ * Uses UIKit to create overlay GM panel
  * Features: One-hit kill, invincibility, infinite HP, speed, teleport, etc.
  */
 
@@ -14,13 +14,15 @@
 #include <JavaScriptCore/JavaScriptCore.h>
 #include <UIKit/UIKit.h>
 #include <objc/runtime.h>
-#include "fishhook.h"
 
 #define LOG_TAG "[DXCTGM]"
-#define LOG(fmt, ...) fprintf(stderr, LOG_TAG " " fmt "\n", ##__VA_ARGS__)
+#define LOG(fmt, ...) do { \
+    FILE *f = fopen("/var/mobile/Library/Logs/dxct_gm.log", "a"); \
+    if (f) { fprintf(f, LOG_TAG " " fmt "\n", ##__VA_ARGS__); fclose(f); } \
+    fprintf(stderr, LOG_TAG " " fmt "\n", ##__VA_ARGS__); \
+} while(0)
 
 // GM State
-static int gm_enabled = 0;
 static UIWindow *gm_window = NULL;
 static BOOL panel_visible = NO;
 
@@ -67,23 +69,48 @@ void handle_option_button(UIButton *btn) {
 
 // Create GM panel using UIKit
 void create_gm_panel() {
-    if (gm_window) return;
+    if (gm_window) {
+        LOG("GM window already exists");
+        return;
+    }
+    
+    LOG("Creating GM panel...");
+    
+    // Get main window
+    UIWindow *mainWindow = [UIApplication sharedApplication].keyWindow;
+    if (!mainWindow) {
+        // Try multiple windows
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (w.windowLevel <= UIWindowLevelNormal) {
+                mainWindow = w;
+                break;
+            }
+        }
+    }
+    
+    if (!mainWindow) {
+        LOG("ERROR: No main window found");
+        return;
+    }
+    
+    LOG("Main window found: %@", mainWindow);
     
     // Get screen bounds
     CGRect screenBounds = [[UIScreen mainScreen] bounds];
+    LOG("Screen size: %.0f x %.0f", screenBounds.size.width, screenBounds.size.height);
     
     // Create overlay window
     gm_window = [[UIWindow alloc] initWithFrame:screenBounds];
-    gm_window.windowLevel = UIWindowLevelAlert + 100;
+    gm_window.windowLevel = UIWindowLevelAlert + 200;
     gm_window.backgroundColor = [UIColor clearColor];
     gm_window.userInteractionEnabled = YES;
-    
     [gm_window makeKeyAndVisible];
+    
     LOG("GM window created, level: %.2f", gm_window.windowLevel);
     
     // Create floating button
-    CGFloat btnX = screenBounds.size.width - 65;
-    CGFloat btnY = screenBounds.size.height - 130;
+    CGFloat btnX = screenBounds.size.width - 70;
+    CGFloat btnY = screenBounds.size.height - 150;
     UIButton *gmBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     [gmBtn setFrame:CGRectMake(btnX, btnY, 50, 50)];
     [gmBtn setBackgroundColor:[UIColor colorWithRed:0.93 green:0.24 blue:0.14 alpha:1.0]];
@@ -95,6 +122,7 @@ void create_gm_panel() {
     gmBtn.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.5].CGColor;
     [gmBtn addTarget:self action:@selector(handle_gm_button_tap:) forControlEvents:UIControlEventTouchUpInside];
     [gm_window addSubview:gmBtn];
+    
     LOG("Floating button created at (%.0f, %.0f)", btnX, btnY);
     
     // Create panel view
@@ -136,7 +164,6 @@ void create_gm_panel() {
     CGFloat rowHeight = 50;
     
     for (int i = 0; i < 8; i++) {
-        // Button
         UIButton *optBtn = [UIButton buttonWithType:UIButtonTypeCustom];
         [optBtn setFrame:CGRectMake(15, startY + i * rowHeight, panelWidth - 30, 40)];
         [optBtn setBackgroundColor:[UIColor colorWithRed:0.15 green:0.15 blue:0.25 alpha:1.0]];
@@ -163,38 +190,34 @@ static JSEvaluateScript_fn original_JSEvaluateScript = NULL;
 JSStringRef hook_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObjectRef thisObject, JSStringRef sourceURL, int *exception) {
     JSStringRef result = original_JSEvaluateScript(ctx, script, thisObject, sourceURL, exception);
     
-    if (!gm_enabled) {
-        gm_enabled = 1;
-        LOG("First JSEvaluateScript call, creating GM panel...");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            create_gm_panel();
-        });
+    if (!gm_window) {
+        LOG("JSEvaluateScript called, triggering GM creation...");
+        create_gm_panel();
     }
     
     return result;
 }
 
-// Constructor
+// Constructor - called when dylib is loaded
 __attribute__((constructor))
 static void dxct_gm_init() {
-    LOG("Initializing DXCT GM debugger...");
-    
-    // Create panel immediately (fallback)
-    dispatch_async(dispatch_get_main_queue(), ^{
-        create_gm_panel();
-    });
+    LOG("=== DXCT GM Debugger Initializing ===");
     
     // Try to hook JSEvaluateScript
     original_JSEvaluateScript = (JSEvaluateScript_fn)dlsym(RTLD_DEFAULT, "JSEvaluateScript");
     
     if (original_JSEvaluateScript) {
-        LOG("Hooking JSEvaluateScript");
-        struct rebinding rebindings[1];
-        rebindings[0].name = "JSEvaluateScript";
-        rebindings[0].replacement = (void *)hook_JSEvaluateScript;
-        rebindings[0].replaced = (void **)&original_JSEvaluateScript;
-        rebind_symbols(rebindings, 1);
+        LOG("JSEvaluateScript found at %p", original_JSEvaluateScript);
+    } else {
+        LOG("WARNING: JSEvaluateScript not found, will use fallback");
     }
     
+    // Create panel after a delay to ensure app is ready
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        LOG("3 seconds later, creating GM panel...");
+        create_gm_panel();
+    });
+    
+    // Also create on first JSEvaluateScript call
     LOG("GM debugger ready");
 }
