@@ -58,20 +58,20 @@
         style.textContent = `
             #dxct-gm-fab {
                 position: fixed;
-                bottom: 100px;
-                right: 20px;
-                width: 56px;
-                height: 56px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                bottom: 80px;
+                right: 15px;
+                width: 60px;
+                height: 60px;
+                background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
                 color: white;
                 border-radius: 50%;
                 display: none;
                 align-items: center;
                 justify-content: center;
-                font-size: 16px;
+                font-size: 18px;
                 font-weight: bold;
-                box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
-                z-index: 99998;
+                box-shadow: 0 4px 20px rgba(238, 90, 36, 0.6), 0 0 0 4px rgba(255,255,255,0.3);
+                z-index: 2147483647;
                 cursor: pointer;
                 transition: all 0.3s;
             }
@@ -79,16 +79,16 @@
                 display: flex;
             }
             #dxct-gm-fab:active {
-                transform: scale(0.95);
+                transform: scale(0.9);
             }
         `;
         btn.appendChild(style);
         document.body.appendChild(btn);
         
-        // Show after 2 seconds
+        // Show immediately
         setTimeout(function() {
             btn.classList.add('visible');
-        }, 2000);
+        }, 500);
     }
     
     // Settings panel
