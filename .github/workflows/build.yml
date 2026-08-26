@@ -4,9 +4,9 @@ name: Build DXCT GM Hook
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -20,35 +20,44 @@ jobs:
           echo "=== Source files ==="
           ls -la src/
           echo ""
-          echo "=== fishhook.c size ==="
+          echo "=== fishhook.c ==="
           wc -l src/fishhook.c
-          echo "=== Inject.jsb.c size ==="
+          echo "=== Inject.jsb.c ==="
           wc -l src/Inject.jsb.c
           
-      - name: Build
+      - name: Build dylib
         run: |
+          # Get SDK path
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK: $SDK"
-          ls -la "$SDK/System/Library/Frameworks/JavaScriptCore.framework"
           
+          # Check JavaScriptCore framework
+          echo "=== Checking frameworks ==="
+          ls "$SDK/System/Library/Frameworks/JavaScriptCore.framework" 2>/dev/null || echo "JavaScriptCore not found"
+          ls "$SDK/Library/Frameworks/JavaScriptCore.framework" 2>/dev/null || echo "JavaScriptCore not found in Library"
+          
+          # List framework paths
+          echo "=== Framework paths ==="
+          xcrun --sdk iphoneos --find JavaScriptCore 2>/dev/null || true
+          find "$SDK" -name "JavaScriptCore.framework" -type d 2>/dev/null | head -5
+          
+          # Build
           echo "=== Building ==="
-          clang -v 2>&1 || true
-          clang \
-            -arch arm64 \
+          cd src
+          clang -arch arm64 \
             -isysroot "$SDK" \
-            -iframework "$SDK/System/Library/Frameworks" \
-            -I src \
+            -I. \
             -O2 \
             -framework JavaScriptCore \
             -dynamiclib \
-            -o dxctx_gm.dylib \
-            src/fishhook.c \
-            src/Inject.jsb.c \
-            2>&1 || echo "Build failed"
-            
+            -o ../dxctx_gm.dylib \
+            fishhook.c \
+            Inject.jsb.c
+          
           echo "=== Result ==="
-          file dxctx_gm.dylib 2>/dev/null || echo "dylib not found"
-          lipo -info dxctx_gm.dylib 2>/dev/null || true
+          ls -la ../dxctx_gm.dylib
+          file ../dxctx_gm.dylib
+          lipo -info ../dxctx_gm.dylib
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
