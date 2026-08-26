@@ -4,8 +4,8 @@
  * Hook JSEvaluateScript to inject GM panel JS
  * Features: One-hit kill, invincibility, infinite HP, speed, teleport, etc.
  *
- * Environment:
- *   DXCT_ENABLE=1           - Enable GM (default: off)
+ * Environment (optional):
+ *   DXCT_ENABLE=1           - Enable GM (default: auto-enabled)
  *   DXCT_JS_FILE=/path      - Custom JS file path
  *   DXCT_LOG_LEVEL=verbose  - Enable verbose logging
  */
@@ -22,9 +22,15 @@
 
 #define LOG_TAG "[DXCTGM]"
 #define LOG(fmt, ...) fprintf(stderr, LOG_TAG " " fmt "\n", ##__VA_ARGS__)
+#define LOGV(fmt, ...) do { \
+    const char *log_level = getenv("DXCT_LOG_LEVEL"); \
+    if (!log_level || strcmp(log_level, "verbose") == 0) \
+        LOG(fmt, ##__VA_ARGS__); \
+} while(0)
 
 // GM State
 static int gm_enabled = 0;
+static int injected = 0;
 
 // Hooked JSEvaluateScript
 typedef JSStringRef (*JSEvaluateScript_fn)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *);
@@ -34,32 +40,30 @@ JSStringRef hook_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObject
     // Call original
     JSStringRef result = original_JSEvaluateScript(ctx, script, thisObject, sourceURL, exception);
     
-    // First call - inject GM if enabled
-    if (!gm_enabled) {
-        const char *enable = getenv("DXCT_ENABLE");
-        if (enable && strcmp(enable, "1") == 0) {
-            gm_enabled = 1;
-            LOG("GM enabled, injecting panel...");
-            
-            // Load custom JS file
-            const char *js_file = getenv("DXCT_JS_FILE");
-            if (js_file && strlen(js_file) > 0) {
-                FILE *fp = fopen(js_file, "r");
-                if (fp) {
-                    char buf[65536];
-                    size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
-                    buf[n] = '\0';
-                    fclose(fp);
-                    
-                    JSStringRef jsStr = JSStringCreateWithUTF8CString(buf);
-                    original_JSEvaluateScript(ctx, jsStr, NULL, NULL, exception);
-                    LOG("Loaded GM script from %s", js_file);
-                } else {
-                    LOG("Failed to open: %s", js_file);
-                }
+    // First call - inject GM if not already injected
+    if (!injected) {
+        injected = 1;
+        LOG("First JSEvaluateScript call detected, injecting GM panel...");
+        
+        // Load custom JS file if specified
+        const char *js_file = getenv("DXCT_JS_FILE");
+        if (js_file && strlen(js_file) > 0) {
+            FILE *fp = fopen(js_file, "r");
+            if (fp) {
+                char buf[65536];
+                size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+                buf[n] = '\0';
+                fclose(fp);
+                
+                JSStringRef jsStr = JSStringCreateWithUTF8CString(buf);
+                original_JSEvaluateScript(ctx, jsStr, NULL, NULL, exception);
+                LOG("Loaded GM script from %s", js_file);
             } else {
-                LOG("Injecting built-in GM panel");
+                LOG("Failed to open: %s", js_file);
             }
+        } else {
+            // Built-in GM panel - will be injected via JS
+            LOG("Using built-in GM panel");
         }
     }
     
@@ -69,12 +73,6 @@ JSStringRef hook_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObject
 // Constructor - called when dylib is loaded
 __attribute__((constructor))
 static void dxct_gm_init() {
-    const char *enable = getenv("DXCT_ENABLE");
-    if (!enable || strcmp(enable, "1") != 0) {
-        LOG("GM disabled (set DXCT_ENABLE=1)");
-        return;
-    }
-    
     LOG("Initializing DXCT GM debugger...");
     
     // Get original function
@@ -96,5 +94,5 @@ static void dxct_gm_init() {
     // Call fishhook
     rebind_symbols(rebindings, 1);
     
-    LOG("GM debugger ready");
+    LOG("GM debugger ready - will inject on first script execution");
 }
