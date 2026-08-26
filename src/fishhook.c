@@ -8,6 +8,8 @@
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
+#include <mach/vm_prot.h>
+#include <mach/mach_types.h>
 #include <sys/mman.h>
 
 #ifdef __LP64__
@@ -37,14 +39,10 @@ static void apply_rebindings_to_image(const mach_header_t *header,
                                        size_t count) {
     if (!header) return;
     
-    const segment_command_t *seg_cmd = NULL;
-    section_t *sections = NULL;
-    uint32_t sections_count = 0;
-    
-    // 找到 __la_symbol_ptr section
-    #ifdef __LP64__
+    // 找到 __DATA 段
     const struct segment_command_64 *seg64 = NULL;
     const struct section_64 *secs64 = NULL;
+    
     for (uint32_t i = 0; i < header->nfat_cmds; i++) {
         seg64 = (const struct segment_command_64 *)((const char *)header + sizeof(mach_header_t) + i * sizeof(struct load_command));
         if (seg64->cmd == LC_SEGMENT_64) {
@@ -52,64 +50,34 @@ static void apply_rebindings_to_image(const mach_header_t *header,
             for (uint32_t j = 0; j < seg64->nsects; j++) {
                 if (strcmp(secs64[j].segname, "__DATA") == 0 &&
                     strcmp(secs64[j].sectname, "__la_symbol_ptr") == 0) {
-                    sections = (section_t *)&secs64[j];
-                    sections_count = 1;
-                    goto found;
-                }
-            }
-        }
-    }
-    #else
-    const struct segment_command *seg = NULL;
-    const struct section *secs = NULL;
-    for (uint32_t i = 0; i < header->nfat_cmds; i++) {
-        seg = (const struct segment_command *)((const char *)header + sizeof(mach_header_t) + i * sizeof(struct load_command));
-        if (seg->cmd == LC_SEGMENT) {
-            secs = (const struct section *)((const char *)seg + sizeof(struct segment_command));
-            for (uint32_t j = 0; j < seg->nsects; j++) {
-                if (strcmp(secs[j].segname, "__DATA") == 0 &&
-                    strcmp(secs[j].sectname, "__la_symbol_ptr") == 0) {
-                    sections = &secs[j];
-                    sections_count = 1;
-                    goto found;
-                }
-            }
-        }
-    }
-    #endif
-    
-    found:
-    if (!sections) return;
-    
-    // 遍历 GOT 条目
-    uintptr_t got_base = (uintptr_t)header + slide + sections->addr;
-    uintptr_t got_end = got_base + sections->size;
-    
-    for (uintptr_t got_addr = got_base; got_addr < got_end; got_addr += sizeof(void *)) {
-        void **func_ptr = (void **)got_addr;
-        void *original = *func_ptr;
-        
-        for (size_t i = 0; i < count; i++) {
-            struct rebinding *rebinding = &rebindings[i];
-            
-            // 检查函数名是否匹配
-            const char *sym_name = rebinding->name;
-            
-            // 通过 dlsym 检查符号地址是否匹配
-            void *sym_ptr = dlsym(RTLD_DEFAULT, sym_name);
-            if (sym_ptr == original) {
-                // 获取当前页面的保护属性
-                mach_port_t task = mach_task_self();
-                vm_address_t addr = got_addr;
-                vm_size_t size = 1;
-                vm_prot_t cur_prot, max_prot;
-                
-                if (vm_protect(task, addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
-                    *func_ptr = rebinding->replacement;
-                    *rebinding->rebind = original;
+                    // 找到 GOT 段
+                    uintptr_t got_base = (uintptr_t)header + slide + secs64[j].addr;
+                    uintptr_t got_end = got_base + secs64[j].size;
                     
-                    // 恢复保护属性
-                    vm_protect(task, addr, size, FALSE, cur_prot);
+                    for (uintptr_t got_addr = got_base; got_addr < got_end; got_addr += sizeof(void *)) {
+                        void **func_ptr = (void **)got_addr;
+                        void *original = *func_ptr;
+                        
+                        for (size_t k = 0; k < count; k++) {
+                            struct rebinding *rebinding = &rebindings[k];
+                            void *sym_ptr = dlsym(RTLD_DEFAULT, rebinding->name);
+                            
+                            if (sym_ptr == original) {
+                                // 修改内存保护
+                                vm_address_t addr = got_addr;
+                                vm_size_t size = sizeof(void *);
+                                
+                                if (vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+                                    *func_ptr = rebinding->replacement;
+                                    *rebinding->rebind = original;
+                                    
+                                    // 恢复内存保护
+                                    vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+                                }
+                            }
+                        }
+                    }
+                    return;
                 }
             }
         }
