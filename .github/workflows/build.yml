@@ -1,2 +1,37 @@
-[CONTEXT OFFLOADED] Content (~680 tokens, 2203 bytes) saved to: /var/minis/offloads/tools/file_write_4b75c89d8872.txt
-Use file_read tool to retrieve if needed.
+name: Build DXCT GM Hook
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macOS-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build dylib
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK"
+          cd src
+          ls -la
+          clang -arch arm64 \
+            -isysroot "$SDK" \
+            -I. \
+            -O2 \
+            -framework JavaScriptCore \
+            -dynamiclib \
+            -o ../dxctx_gm.dylib \
+            fishhook.c \
+            Inject.jsb.c
+          cd ..
+          ls -la dxctx_gm.dylib
+          file dxctx_gm.dylib
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxctx_gm
+          path: dxctx_gm.dylib
