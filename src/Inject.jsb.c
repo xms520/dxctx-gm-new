@@ -41,8 +41,8 @@ static JSContextRef gCachedContext = NULL;
 static pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int gInjected = 0;
 
-// GM脚本 - 使用拼接避免编译器问题
-static const char *gm_script_parts[] = {
+// GM脚本 - 使用属性防止优化器移除
+static const char *gm_script_parts[] __attribute__((used)) = {
     "window.GM = window.GM || {};\n(function() {\n",
     "  'use strict';\n",
     "  var GM = window.GM;\n",
