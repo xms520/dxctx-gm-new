@@ -1,4 +1,4 @@
-name: Build DXCT GM Hook (秒杀+无敌)
+name: Build DXCT GM Hook (秒杀+无敌 v2)
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
       
     - name: Build dylib
       run: |
-        echo "=== Building dxctx_gm.dylib ==="
+        echo "=== Building dxctx_gm.dylib v2.0 ==="
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
         echo "SDK: $SDK"
@@ -36,6 +36,7 @@ jobs:
           -dynamiclib \
           -o dxctx_gm.dylib \
           src/Inject.jsb.c \
+          src/Overlay.m \
           -Wl,-install_name,@rpath/dxctx_gm.dylib
         
         echo "=== Build Result ==="

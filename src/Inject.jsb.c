@@ -1,9 +1,8 @@
-// Inject.jsb.c - GM hook for 大侠闯天下 (Cocos2d-x JSB)
-// Features: 秒杀 (One-hit Kill), 无敌 (God Mode)
+// Inject.jsb.c - GM hook core (pure C, no ObjC)
+// Handles JSContext capture and GM script injection
 // Env: DXCT_ENABLE=1, DXCT_JS_FILE=/path/to/gm_script.js
 
 #include <JavaScriptCore/JavaScriptCore.h>
-#include <UIKit/UIKit.h>
 #include <pthread.h>
 #include <dlfcn.h>
 #include <stdio.h>
@@ -14,17 +13,12 @@
 #include <sys/mman.h>
 
 #define LOG_TAG "[DXCT-GM]"
+#define GM_SCRIPT_ENV "DXCT_JS_FILE"
 
 // ========== Global State ==========
 static JSContextRef gJSContext = NULL;
-static JSGlobalContextRef gJSGlobal = NULL;
 static FILE *gLog = NULL;
 static pthread_mutex_t gCtxLock = PTHREAD_MUTEX_INITIALIZER;
-static volatile int gInitDone = 0;
-
-// GM flags
-static volatile int gOneHitKill = 0;
-static volatile int gGodMode  = 0;
 
 // ========== Logging ==========
 static void dxct_log(const char *fmt, ...) {
@@ -44,78 +38,7 @@ static void dxct_log(const char *fmt, ...) {
     va_end(args);
 }
 
-// ========== GM Script (embedded) ==========
-// The actual GM logic is in gm_script.js - we inject it when JSContext is ready
-static const char *GM_SCRIPT_PATH_ENV = "DXCT_JS_FILE";
-
-// ========== Native GM Overlay (UIScene/Aliases) ==========
-static UIWindow *gGMWindow = NULL;
-static UILabel  *gGMLable   = NULL;
-static UISwitch *gKillSwitch = NULL;
-static UISwitch *gGodSwitch  = NULL;
-static UIButton *gCloseBtn   = nil;
-
-static void createGMOverlay(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (gGMWindow) return;
-        
-        UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 200, 220)];
-        window.windowLevel = UIWindowLevelAlert + 100;
-        window.backgroundColor = [UIColor clearColor];
-        window.userInteractionEnabled = YES;
-        
-        // Semi-transparent background
-        UIView *bg = [[UIView alloc] initWithFrame:CGRectMake(10, 80, 180, 140)];
-        bg.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
-        bg.layer.cornerRadius = 12;
-        [window addSubview:bg];
-        
-        // Title label
-        UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(10, 85, 180, 30)];
-        title.text = @"大侠GM";
-        title.textColor = [UIColor whiteColor];
-        title.font = [UIFont boldSystemFontOfSize:16];
-        title.textAlignment = NSTextAlignmentCenter;
-        [window addSubview:title];
-        
-        // 秒杀 switch
-        UILabel *killLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 120, 100, 30)];
-        killLabel.text = @"🗡️ 秒杀";
-        killLabel.textColor = [UIColor systemYellowColor];
-        killLabel.font = [UIFont systemFontOfSize:15];
-        [window addSubview:killLabel];
-        
-        UISwitch *killSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(130, 122, 50, 30)];
-        killSwitch.on = NO;
-        [killSwitch addTarget:nil action:@selector(setOnHitKill:) animated:YES];
-        [window addSubview:killSwitch];
-        
-        // 无敌 switch
-        UILabel *godLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 155, 100, 30)];
-        godLabel.text = @"🛡️ 无敌";
-        godLabel.textColor = [UIColor systemGreenColor];
-        godLabel.font = [UIFont systemFontOfSize:15];
-        [window addSubview:godLabel];
-        
-        UISwitch *godSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(130, 157, 50, 30)];
-        godSwitch.on = NO;
-        [window addSubview:godSwitch];
-        
-        // Status label
-        UILabel *status = [[UILabel alloc] initWithFrame:CGRectMake(10, 195, 180, 25)];
-        status.text = @"状态: 关闭";
-        status.textColor = [UIColor lightGrayColor];
-        status.font = [UIFont systemFontOfSize:11];
-        status.textAlignment = NSTextAlignmentCenter;
-        [window addSubview:status];
-        
-        gGMWindow = window;
-        [window makeKeyAndVisible];
-        dxct_log("Native GM overlay created");
-    });
-}
-
-// ========== JS Context Capture via JSEvaluateScript hook ==========
+// ========== JSEvaluateScript Hook ==========
 typedef JSContextRef (*JSEvaluateScriptFn)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *);
 static JSEvaluateScriptFn orig_JSEvaluateScript = NULL;
 
@@ -128,18 +51,18 @@ static JSContextRef hooked_JSEvaluateScript(JSContextRef ctx, JSStringRef script
             gJSContext = ctx;
             dxct_log("JSContext captured: %p", ctx);
             
-            // Try to inject GM script
-            char *jsPath = getenv(GM_SCRIPT_PATH_ENV);
-            if (jsPath) {
+            // Inject GM script from file
+            char *jsPath = getenv(GM_SCRIPT_ENV);
+            if (jsPath && strlen(jsPath) > 0) {
                 dxct_log("Injecting GM from: %s", jsPath);
                 FILE *f = fopen(jsPath, "r");
                 if (f) {
                     fseek(f, 0, SEEK_END);
                     long sz = ftell(f);
                     fseek(f, 0, SEEK_SET);
-                    char *buf = malloc(sz + 1);
+                    char *buf = malloc((size_t)sz + 1);
                     if (buf) {
-                        fread(buf, 1, sz, f);
+                        fread(buf, 1, (size_t)sz, f);
                         buf[sz] = '\0';
                         fclose(f);
                         
@@ -149,9 +72,11 @@ static JSContextRef hooked_JSEvaluateScript(JSContextRef ctx, JSStringRef script
                             JSValueRef result = JSEvaluateScript(ctx, jsStr, NULL, NULL, 1, &exc);
                             if (exc) {
                                 JSStringRef excStr = JSValueToStringCopy(ctx, exc, NULL);
-                                const char *msg = JSStringGetUTF8CString(excStr);
-                                dxct_log("GM inject error: %s", msg ? msg : "unknown");
-                                if (msg) JSStringRelease(excStr);
+                                if (excStr) {
+                                    const char *msg = JSStringGetUTF8CString(excStr);
+                                    dxct_log("GM inject error: %s", msg ? msg : "unknown");
+                                    if (msg) JSStringRelease(excStr);
+                                }
                             } else {
                                 dxct_log("GM script injected successfully");
                             }
@@ -162,27 +87,26 @@ static JSContextRef hooked_JSEvaluateScript(JSContextRef ctx, JSStringRef script
                 } else {
                     dxct_log("Cannot open GM script: %s", jsPath);
                 }
-            }
-            
-            // Also embed a minimal GM script as fallback
-            if (!jsPath) {
-                dxct_log("No DXCT_JS_FILE set, using embedded GM");
-                const char *embedded = 
+            } else {
+                dxct_log("No DXCT_JS_FILE set, injecting embedded fallback GM");
+                // Embedded fallback GM (minimal)
+                const char *embedded =
                     "(function(){\n"
                     "  window.GM = {\n"
                     "    oneHitKill: false,\n"
                     "    godMode: false,\n"
-                    "    enableOneHitKill: function(){ this.oneHitKill=true; console.log('[GM] 秒杀ON'); },\n"
-                    "    enableGodMode:   function(){ this.godMode=true;  console.log('[GM] 无敌ON'); },\n"
-                    "    disableAll:      function(){ this.oneHitKill=false; this.godMode=false; console.log('[GM] 全部关闭'); }\n"
+                    "    enableOneHitKill: function(){ this.oneHitKill=true; console.log('[GM] 秒杀ON'); return true; },\n"
+                    "    enableGodMode:   function(){ this.godMode=true;  console.log('[GM] 无敌ON'); return true; },\n"
+                    "    disableAll:      function(){ this.oneHitKill=false; this.godMode=false; console.log('[GM] 全部关闭'); return true; }\n"
                     "  };\n"
+                    "  window.DXCT = window.GM;\n"
                     "})();\n";
                 JSStringRef es = JSStringCreateWithUTF8CString(embedded);
                 if (es) {
                     JSValueRef exc = NULL;
                     JSEvaluateScript(ctx, es, NULL, NULL, 1, &exc);
                     JSStringRelease(es);
-                    dxct_log("Embedded GM injected");
+                    dxct_log("Embedded fallback GM injected");
                 }
             }
         }
@@ -192,25 +116,17 @@ static JSContextRef hooked_JSEvaluateScript(JSContextRef ctx, JSStringRef script
     if (orig_JSEvaluateScript) {
         return orig_JSEvaluateScript(ctx, script, thisObject, sourceURL, lineNumber, exception);
     }
-    return NULL;
+    return ctx;
 }
 
-// ========== Symbol Hook via fishhook-style rebinding ==========
-struct rebindings_entry {
-    void *symbol;
-    void *replacement;
-    void **original;
-};
-
-static struct rebindings_entry _rebindings[1];
-static unsigned int _nrebindings;
-
-static int rebind_symbols(struct rebindings_entry *rebindings, unsigned int nargs) {
+// ========== Symbol Rebinding via mach_vm ==========
+static int hook_symbol(const char *symbol_name, void *replacement, void **original_out) {
     Dl_info info;
-    if (dladdr((void *)hooked_JSEvaluateScript, &info) == 0) return -1;
+    if (dladdr((void *)hooked_JSEvaluateScript, &info) == 0) {
+        dxct_log("dladdr failed");
+        return -1;
+    }
     
-    uintptr_t start = (uintptr_t)info.dli_fbase;
-    Dl_info symInfo;
     void *handle = dlopen("JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
     if (!handle) {
         handle = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
@@ -220,37 +136,48 @@ static int rebind_symbols(struct rebindings_entry *rebindings, unsigned int narg
         return -1;
     }
     
-    void *sym = dlsym(handle, "JSEvaluateScript");
-    dlclose(handle);
+    void *sym = dlsym(handle, symbol_name);
     if (!sym) {
-        dxct_log("dlsym JSEvaluateScript failed");
+        dxct_log("dlsym %s failed: %s", symbol_name, dlerror());
+        dlclose(handle);
         return -1;
     }
     
-    // Make the page writable
+    // Save original
+    *original_out = sym;
+    dxct_log("Found %s at %p", symbol_name, sym);
+    
+    // Make page writable
     mach_vm_address_t addr = (mach_vm_address_t)sym;
-    mach_vm_size_t size = sizeof(void *);
-    vm_prot_t old_protection;
-    if (mach_vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ|VM_PROT_WRITE) != KERN_SUCCESS) {
-        dxct_log("mach_vm_protect failed");
+    mach_vm_size_t page_size = 4096;
+    vm_prot_t old_prot;
+    kern_return_t kr = mach_vm_protect(mach_task_self(), addr, page_size, FALSE,
+                                        VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
+    if (kr != KERN_SUCCESS) {
+        dxct_log("mach_vm_protect failed: %d", kr);
+        dlclose(handle);
         return -1;
     }
     
-    // Save original and install replacement
-    *(void **)rebindings->original = (void *)addr;
-    *(void **)addr = (void *)rebindings->replacement;
+    // Install replacement (store pointer to replacement function)
+    void **slot = (void **)addr;
+    *slot = replacement;
     
-    // Restore original protections
-    mach_vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ|VM_PROT_EXECUTE);
+    // Restore execute permission
+    kr = mach_vm_protect(mach_task_self(), addr, page_size, FALSE,
+                         VM_PROT_READ | VM_PROT_EXECUTE);
+    if (kr != KERN_SUCCESS) {
+        dxct_log("mach_vm_protect restore failed: %d", kr);
+    }
     
-    dxct_log("Symbol rebinding installed: JSEvaluateScript -> hooked_JSEvaluateScript");
+    dlclose(handle);
+    dxct_log("Symbol rebinding installed for %s", symbol_name);
     return 0;
 }
 
 // ========== dylib entry point ==========
 __attribute__((constructor))
 static void dxct_gm_init(void) {
-    // Check enable flag
     const char *enable = getenv("DXCT_ENABLE");
     if (!enable || strcmp(enable, "1") != 0) {
         return;
@@ -258,37 +185,32 @@ static void dxct_gm_init(void) {
     
     dxct_log("dxctx_gm.dylib loading... (DXCT_ENABLE=1)");
     
-    // Setup rebindings
-    _rebindings[0].symbol   = (void *)hooked_JSEvaluateScript;
-    _rebindings[0].replacement = (void *)hooked_JSEvaluateScript;
-    _rebindings[0].original  = (void **)&orig_JSEvaluateScript;
-    _nrebindings = 1;
-    
-    if (rebind_symbols(_rebindings, _nrebindings) == 0) {
-        dxct_log("Hook installed successfully!");
+    // Try direct symbol rebind first
+    if (hook_symbol("JSEvaluateScript", (void *)hooked_JSEvaluateScript, 
+                    (void **)&orig_JSEvaluateScript) == 0) {
+        dxct_log("Direct symbol hook installed");
     } else {
-        dxct_log("Hook installation FAILED, falling back to dlsym method");
-        // Fallback: try dlsym directly
+        // Fallback: try to find via dlsym at runtime
+        dxct_log("Direct hook failed, will try runtime lookup");
         void *jc = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
         if (jc) {
             orig_JSEvaluateScript = (JSEvaluateScriptFn)dlsym(jc, "JSEvaluateScript");
             dxct_log("Found JSEvaluateScript via dlsym: %p", orig_JSEvaluateScript);
+            // Can't easily replace without Mach-O editing, but we can still capture context
+            // by wrapping through JSEvaluateScript if it's called through our library
         }
     }
-    
-    // Create native overlay after a delay
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), 
-                   dispatch_get_main_queue(), ^{
-        createGMOverlay();
-    });
 }
 
 __attribute__((destructor))
 static void dxct_gm_fini(void) {
+    pthread_mutex_lock(&gCtxLock);
     if (gJSContext) {
         CFRelease(gJSContext);
         gJSContext = NULL;
     }
+    pthread_mutex_unlock(&gCtxLock);
+    
     if (gLog) {
         fclose(gLog);
         gLog = NULL;
@@ -296,9 +218,44 @@ static void dxct_gm_fini(void) {
     dxct_log("dylib unloaded");
 }
 
-// ========== Getter functions for JS bridge ==========
-// These can be called from JavaScript via reflection or direct access
-extern int get_one_hit_kill(void) { return gOneHitKill; }
-extern int get_god_mode(void)   { return gGodMode; }
-extern void set_one_hit_kill(int v) { gOneHitKill = v; dxct_log("oneHitKill=%d", v); }
-extern void set_god_mode(int v)   { gGodMode = v;   dxct_log("godMode=%d", v); }
+// ========== Exported symbols (for native overlay to call) ==========
+int dxct_get_one_hit_kill(void) { return 0; }
+int dxct_get_god_mode(void)   { return 0; }
+void dxct_set_one_hit_kill(int v) { (void)v; }
+void dxct_set_god_mode(int v)   { (void)v; }
+
+// Get captured JSContext (for native overlay)
+JSContextRef dxct_get_js_context(void) {
+    pthread_mutex_lock(&gCtxLock);
+    JSContextRef ctx = gJSContext;
+    if (ctx) CFRetain(ctx);
+    pthread_mutex_unlock(&gCtxLock);
+    return ctx;
+}
+
+// Evaluate JS in captured context
+void dxct_eval_js(const char *js_code) {
+    pthread_mutex_lock(&gCtxLock);
+    JSContextRef ctx = gJSContext;
+    pthread_mutex_unlock(&gCtxLock);
+    
+    if (!ctx || !js_code) return;
+    
+    JSStringRef jsStr = JSStringCreateWithUTF8CString(js_code);
+    if (!jsStr) return;
+    
+    JSValueRef exc = NULL;
+    JSValueRef result = JSEvaluateScript(ctx, jsStr, NULL, NULL, 1, &exc);
+    JSStringRelease(jsStr);
+    
+    if (exc) {
+        JSStringRef excStr = JSValueToStringCopy(ctx, exc, NULL);
+        if (excStr) {
+            const char *msg = JSStringGetUTF8CString(excStr);
+            dxct_log("dxct_eval_js error: %s", msg ? msg : "unknown");
+            if (msg) JSStringRelease(excStr);
+        }
+    } else {
+        dxct_log("dxct_eval_js success");
+    }
+}

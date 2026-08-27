@@ -23,7 +23,7 @@ LDFLAGS  = -framework JavaScriptCore \
            -dynamiclib \
            -Wl,-install_name,@rpath/dxctx_gm.dylib
 
-SRCS     = src/Inject.jsb.c
+SRCS     = src/Inject.jsb.c src/Overlay.m
 OUT      = dxctx_gm.dylib
 
 .PHONY: all clean
@@ -39,6 +39,8 @@ $(OUT): $(SRCS)
 	@file $@
 	@lipo -info $@ 2>/dev/null || true
 	@ls -lh $@
+	@echo "=== Symbols ==="
+	@nm -U $@ 2>/dev/null | grep " T " | head -20
 
 clean:
 	rm -f $(OUT)
