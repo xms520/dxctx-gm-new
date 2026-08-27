@@ -10,16 +10,13 @@ jobs:
     runs-on: macos-latest
     
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
+    - uses: actions/checkout@v4
+    
     - name: Build dylib
       run: |
         echo "=== Building dxctx_gm.dylib v2.0 ==="
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
         echo "SDK: $SDK"
-        echo "Min version: $MIN_VER"
         
         clang \
           -arch arm64 \
@@ -28,15 +25,12 @@ jobs:
           -iframework "$SDK/Library/Frameworks" \
           -I src \
           -O2 \
-          -mios-version-min=$MIN_VER \
-          -fobjc-arc \
+          -mios-version-min=15.0 \
+          -Wall \
           -framework JavaScriptCore \
-          -framework UIKit \
-          -framework Foundation \
           -dynamiclib \
           -o dxctx_gm.dylib \
           src/Inject.jsb.c \
-          src/Overlay.m \
           -Wl,-install_name,@rpath/dxctx_gm.dylib
         
         echo "=== Build Result ==="
