@@ -1,19 +1,18 @@
-// Overlay.m - Native GM overlay for 大侠闯天下
-// Creates a floating toggle panel with 秒杀 and 无敌 switches
+// Overlay.m - Native GM overlay for 大侠闯天下 v2.0
+// Floating panel with 秒杀 and 无敌 toggles
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 
-// Declarations from Inject.jsb.c
+// From Inject.jsb.c
 extern JSContextRef dxct_get_js_context(void);
 extern void dxct_eval_js(const char *js_code);
+extern void dxct_set_one_hit_kill(int v);
+extern void dxct_set_god_mode(int v);
 
 // Forward declarations
-static void dxct_set_one_hit_kill(int v);
-static void dxct_set_god_mode(int v);
-
-@interface DXCTOverlayViewController : UIViewController
-@property (nonatomic, strong) UIView *container;
+@interface DXCTOverlayVC : UIViewController
+@property (nonatomic, strong) UIView *cardView;
 @property (nonatomic, strong) UISwitch *killSwitch;
 @property (nonatomic, strong) UISwitch *godSwitch;
 @property (nonatomic, strong) UILabel *statusLabel;
@@ -21,242 +20,212 @@ static void dxct_set_god_mode(int v);
 @property (nonatomic, assign) BOOL godMode;
 @end
 
-@implementation DXCTOverlayViewController
+@implementation DXCTOverlayVC
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor clearColor];
-    self.oneHitKill = NO;
-    self.godMode = NO;
-    [self buildUI];
+    [self setupUI];
 }
 
-- (void)viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
-    // Make window topmost
-    if (self.view.window) {
-        self.view.window.windowLevel = UIWindowLevelAlert + 100;
-    }
-}
-
-- (void)buildUI {
-    // Container
-    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 60, 220, 180)];
-    container.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.85];
-    container.layer.cornerRadius = 14;
-    container.layer.borderWidth = 1.0;
-    container.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.25].CGColor;
-    container.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:container];
-    self.container = container;
+- (void)setupUI {
+    // Card container
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 210, 190)];
+    card.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.88];
+    card.layer.cornerRadius = 14;
+    card.layer.borderWidth = 1.0;
+    card.layer.borderColor = [UIColor whiteColor].CGColor;
+    card.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:card];
+    self.cardView = card;
     
     // Drag gesture
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPan:)];
-    [container addGestureRecognizer:pan];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onDrag:)];
+    [card addGestureRecognizer:pan];
     
     // Title
     UILabel *title = [[UILabel alloc] init];
-    title.text = @"🎮 大侠GM v2.0";
+    title.text = @"🎮 大侠闯天下 GM";
+    title.font = [UIFont boldSystemFontOfSize:14];
     title.textColor = [UIColor whiteColor];
-    title.font = [UIFont boldSystemFontOfSize:15];
     title.textAlignment = NSTextAlignmentCenter;
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:title];
+    [card addSubview:title];
     [NSLayoutConstraint activateConstraints:@[
-        [title.topAnchor constraintEqualToAnchor:container.topAnchor constant:12],
-        [title.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:0],
-        [title.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:0],
+        [title.topAnchor constraintEqualToAnchor:card.topAnchor constant:14],
+        [title.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
     ]];
     
     // Divider
-    UIView *divider = [[UIView alloc] init];
-    divider.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.2];
-    divider.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:divider];
+    UIView *div = [[UIView alloc] init];
+    div.backgroundColor = [UIColor whiteColor];
+    div.alpha = 0.2;
+    div.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:div];
     [NSLayoutConstraint activateConstraints:@[
-        [divider.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:10],
-        [divider.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:15],
-        [divider.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-15],
-        [divider.heightAnchor constraintEqualToConstant:1],
+        [div.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:10],
+        [div.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [div.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        [div.heightAnchor constraintEqualToConstant:1],
     ]];
     
-    // Row 1: 秒杀
-    UILabel *killLabel = [[UILabel alloc] init];
-    killLabel.text = @"🗡️ 秒杀";
-    killLabel.textColor = [UIColor systemYellowColor];
-    killLabel.font = [UIFont systemFontOfSize:15];
-    killLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:killLabel];
+    // === 秒杀 row ===
+    UILabel *killTxt = [[UILabel alloc] init];
+    killTxt.text = @"🗡️ 秒杀";
+    killTxt.font = [UIFont systemFontOfSize:15];
+    killTxt.textColor = [UIColor systemYellowColor];
+    killTxt.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:killTxt];
     [NSLayoutConstraint activateConstraints:@[
-        [killLabel.topAnchor constraintEqualToAnchor:divider.bottomAnchor constant:12],
-        [killLabel.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:20],
+        [killTxt.topAnchor constraintEqualToAnchor:div.bottomAnchor constant:14],
+        [killTxt.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
     ]];
     
-    UISwitch *killSwitch = [[UISwitch alloc] init];
-    killSwitch.on = NO;
-    [killSwitch addTarget:self action:@selector(onKillSwitch:) forControlEvents:UIControlEventValueChanged];
-    killSwitch.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:killSwitch];
+    UISwitch *killSw = [[UISwitch alloc] init];
+    killSw.on = NO;
+    [killSw addTarget:self action:@selector(onKillToggled:) forControlEvents:UIControlEventValueChanged];
+    killSw.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:killSw];
     [NSLayoutConstraint activateConstraints:@[
-        [killSwitch.topAnchor constraintEqualToAnchor:killLabel.topAnchor constant:0],
-        [killSwitch.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-20],
+        [killSw.centerYAnchor constraintEqualToAnchor:killTxt.centerYAnchor],
+        [killSw.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
     ]];
-    self.killSwitch = killSwitch;
+    self.killSwitch = killSw;
     
-    // Row 2: 无敌
-    UILabel *godLabel = [[UILabel alloc] init];
-    godLabel.text = @"🛡️ 无敌";
-    godLabel.textColor = [UIColor systemGreenColor];
-    godLabel.font = [UIFont systemFontOfSize:15];
-    godLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:godLabel];
+    // === 无敌 row ===
+    UILabel *godTxt = [[UILabel alloc] init];
+    godTxt.text = @"🛡️ 无敌";
+    godTxt.font = [UIFont systemFontOfSize:15];
+    godTxt.textColor = [UIColor systemGreenColor];
+    godTxt.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:godTxt];
     [NSLayoutConstraint activateConstraints:@[
-        [godLabel.topAnchor constraintEqualToAnchor:killLabel.bottomAnchor constant:14],
-        [godLabel.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:20],
+        [godTxt.topAnchor constraintEqualToAnchor:killTxt.bottomAnchor constant:16],
+        [godTxt.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
     ]];
     
-    UISwitch *godSwitch = [[UISwitch alloc] init];
-    godSwitch.on = NO;
-    [godSwitch addTarget:self action:@selector(onGodSwitch:) forControlEvents:UIControlEventValueChanged];
-    godSwitch.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:godSwitch];
+    UISwitch *godSw = [[UISwitch alloc] init];
+    godSw.on = NO;
+    [godSw addTarget:self action:@selector(onGodToggled:) forControlEvents:UIControlEventValueChanged];
+    godSw.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:godSw];
     [NSLayoutConstraint activateConstraints:@[
-        [godSwitch.topAnchor constraintEqualToAnchor:godLabel.topAnchor constant:0],
-        [godSwitch.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-20],
+        [godSw.centerYAnchor constraintEqualToAnchor:godTxt.centerYAnchor],
+        [godSw.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
     ]];
-    self.godSwitch = godSwitch;
+    self.godSwitch = godSw;
     
     // Status
-    UILabel *status = [[UILabel alloc] init];
-    status.text = @"状态: 关闭";
-    status.textColor = [UIColor lightGrayColor];
-    status.font = [UIFont systemFontOfSize:11];
-    status.textAlignment = NSTextAlignmentCenter;
-    status.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:status];
+    UILabel *st = [[UILabel alloc] init];
+    st.text = @"状态: 关闭";
+    st.font = [UIFont systemFontOfSize:11];
+    st.textColor = [UIColor lightGrayColor];
+    st.textAlignment = NSTextAlignmentCenter;
+    st.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:st];
     [NSLayoutConstraint activateConstraints:@[
-        [status.topAnchor constraintEqualToAnchor:godLabel.bottomAnchor constant:14],
-        [status.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:0],
-        [status.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:0],
+        [st.topAnchor constraintEqualToAnchor:godTxt.bottomAnchor constant:16],
+        [st.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:0],
+        [st.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:0],
     ]];
-    self.statusLabel = status;
+    self.statusLabel = st;
     
     // Hint
     UILabel *hint = [[UILabel alloc] init];
-    hint.text = @"拖拽移动 • 点击切换";
+    hint.text = @"拖拽移动 · 点击切换";
+    hint.font = [UIFont systemFontOfSize:9];
     hint.textColor = [UIColor colorWithWhite:0.5 alpha:1.0];
-    hint.font = [UIFont systemFontOfSize:10];
     hint.textAlignment = NSTextAlignmentCenter;
     hint.translatesAutoresizingMaskIntoConstraints = NO;
-    [container addSubview:hint];
+    [card addSubview:hint];
     [NSLayoutConstraint activateConstraints:@[
-        [hint.topAnchor constraintEqualToAnchor:status.bottomAnchor constant:6],
-        [hint.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:0],
-        [hint.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:0],
-        [hint.bottomAnchor constraintEqualToAnchor:container.bottomAnchor constant:-8],
+        [hint.topAnchor constraintEqualToAnchor:st.bottomAnchor constant:8],
+        [hint.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:0],
+        [hint.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:0],
+        [hint.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-12],
     ]];
 }
 
-- (void)onKillSwitch:(UISwitch *)sender {
-    self.oneHitKill = sender.on;
-    dxct_set_one_hit_kill(sender.on ? 1 : 0);
-    [self updateStatus];
-    [self sendToJSWithFeature:@"oneHitKill" on:sender.on];
-    NSLog(@"[DXCT] 秒杀 %@", sender.on ? @"ON" : @"OFF");
+- (void)onKillToggled:(UISwitch *)sw {
+    self.oneHitKill = sw.on;
+    dxct_set_one_hit_kill(sw.on ? 1 : 0);
+    [self refreshStatus];
+    NSLog(@"[DXCT] 秒杀 %@", sw.on ? @"ON" : @"OFF");
 }
 
-- (void)onGodSwitch:(UISwitch *)sender {
-    self.godMode = sender.on;
-    dxct_set_god_mode(sender.on ? 1 : 0);
-    [self updateStatus];
-    [self sendToJSWithFeature:@"godMode" on:sender.on];
-    NSLog(@"[DXCT] 无敌 %@", sender.on ? @"ON" : @"OFF");
+- (void)onGodToggled:(UISwitch *)sw {
+    self.godMode = sw.on;
+    dxct_set_god_mode(sw.on ? 1 : 0);
+    [self refreshStatus];
+    NSLog(@"[DXCT] 无敌 %@", sw.on ? @"ON" : @"OFF");
 }
 
-- (void)updateStatus {
-    NSString *text;
-    UIColor *color;
+- (void)refreshStatus {
+    NSString *txt;
+    UIColor *clr;
     if (self.oneHitKill && self.godMode) {
-        text = @"🔥 秒杀+无敌 ON";
-        color = [UIColor systemRedColor];
+        txt = @"🔥 秒杀+无敌 ON";
+        clr = [UIColor systemRedColor];
     } else if (self.oneHitKill) {
-        text = @"🗡️ 秒杀 ON";
-        color = [UIColor systemYellowColor];
+        txt = @"🗡️ 秒杀 ON";
+        clr = [UIColor systemYellowColor];
     } else if (self.godMode) {
-        text = @"🛡️ 无敌 ON";
-        color = [UIColor systemGreenColor];
+        txt = @"🛡️ 无敌 ON";
+        clr = [UIColor systemGreenColor];
     } else {
-        text = @"状态: 全部关闭";
-        color = [UIColor lightGrayColor];
+        txt = @"状态: 全部关闭";
+        clr = [UIColor lightGrayColor];
     }
-    self.statusLabel.text = text;
-    self.statusLabel.textColor = color;
+    self.statusLabel.text = txt;
+    self.statusLabel.textColor = clr;
 }
 
-- (void)sendToJSWithFeature:(NSString *)feature on:(BOOL)on {
-    JSContextRef ctx = dxct_get_js_context();
-    if (!ctx) {
-        NSLog(@"[DXCT] No JS context yet");
-        return;
-    }
-    
-    const char *js;
-    if ([feature isEqualToString:@"oneHitKill"]) {
-        js = on 
-            ? "if(window.GM){try{GM.toggleOneHitKill();}catch(e){console.log('[GM] error:'+e);}}"
-            : "if(window.GM){try{GM.unhookDamage();GM.oneHitKill=false;}catch(e){}}";
-    } else {
-        js = on
-            ? "if(window.GM){try{GM.toggleGodMode();}catch(e){console.log('[GM] error:'+e);}}"
-            : "if(window.GM){try{GM.unhookTakeDamage();GM.godMode=false;}catch(e){}}";
-    }
-    
-    dxct_eval_js(js);
-}
-
-- (void)onPan:(UIPanGestureRecognizer *)pan {
-    UIView *view = pan.view;
+- (void)onDrag:(UIPanGestureRecognizer *)pan {
+    UIView *v = pan.view;
     if (pan.state == UIGestureRecognizerStateBegan || pan.state == UIGestureRecognizerStateChanged) {
-        CGPoint translation = [pan translationInView:self.view];
-        CGRect frame = view.frame;
-        frame.origin.x += translation.x;
-        frame.origin.y += translation.y;
-        // Clamp to screen bounds
-        CGRect screen = [UIApplication sharedApplication].keyWindow.bounds;
-        frame.origin.x = fmax(0, fmin(frame.origin.x, screen.size.width - frame.size.width));
-        frame.origin.y = fmax(0, fmin(frame.origin.y, screen.size.height - frame.size.height));
-        view.frame = frame;
+        CGPoint t = [pan translationInView:self.view];
+        CGRect f = v.frame;
+        f.origin.x += t.x;
+        f.origin.y += t.y;
+        CGSize s = self.view.bounds.size;
+        f.origin.x = fmax(0, fmin(f.origin.x, s.width  - f.size.width));
+        f.origin.y = fmax(0, fmin(f.origin.y, s.height - f.size.height));
+        v.frame = f;
         [pan setTranslation:CGPointZero inView:self.view];
     }
 }
 
 @end
 
-// ========== Global State ==========
-static UIWindow *gGMWindow = nil;
-static DXCTOverlayViewController *gViewController = nil;
-static dispatch_once_t gInitOnce;
+// ========== Singleton wrapper ==========
+static UIWindow *gWindow    = nil;
+static DXCTOverlayVC  *gVC    = nil;
 
-// ========== Constructor ==========
 __attribute__((constructor))
-static void dxct_overlay_init(void) {
-    dispatch_once(&gInitOnce, ^{
-        NSLog(@"[DXCT] Native overlay initializing...");
+static void dxct_overlay_ctor(void) {
+    NSLog(@"[DXCT] Overlay initializing...");
+    
+    gVC = [[DXCTOverlayVC alloc] init];
+    
+    gWindow = [[UIWindow alloc] initWithFrame:CGRectZero];
+    gWindow.windowLevel = UIWindowLevelAlert + 100;
+    gWindow.rootViewController = gVC;
+    gWindow.backgroundColor = [UIColor clearColor];
+    gWindow.userInteractionEnabled = YES;
+    
+    // Show after game is ready
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        CGRect screen = [[UIScreen mainScreen] bounds];
+        [gWindow setFrame:screen];
+        [gWindow makeKeyAndVisible];
         
-        gViewController = [[DXCTOverlayViewController alloc] init];
+        // Center the card
+        CGRect cardFrame = gVC.cardView.frame;
+        cardFrame.origin.x = (screen.size.width  - cardFrame.size.width)  / 2.0;
+        cardFrame.origin.y = (screen.size.height - cardFrame.size.height) / 2.0 - 40;
+        gVC.cardView.frame = cardFrame;
         
-        gGMWindow = [[UIWindow alloc] initWithFrame:CGRectZero];
-        gGMWindow.windowLevel = UIWindowLevelAlert + 100;
-        gGMWindow.rootViewController = gViewController;
-        gGMWindow.backgroundColor = [UIColor clearColor];
-        gGMWindow.userInteractionEnabled = YES;
-        
-        // Delay creation to let game load
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
-                      dispatch_get_main_queue(), ^{
-            [gGMWindow setFrame:[UIApplication sharedApplication].keyWindow.bounds]];
-            [gGMWindow makeKeyAndVisible];
-            NSLog(@"[DXCT] GM overlay visible");
-        });
+        NSLog(@"[DXCT] GM overlay visible");
     });
 }
