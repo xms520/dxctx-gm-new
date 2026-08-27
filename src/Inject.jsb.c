@@ -259,3 +259,25 @@ void dxct_eval_js(const char *js_code) {
         dxct_log("dxct_eval_js success");
     }
 }
+
+// ========== GM flag setters (called from Overlay.m) ==========
+static volatile int gFlagOneHitKill = 0;
+static volatile int gFlagGodMode    = 0;
+
+void dxct_set_one_hit_kill(int v) {
+    gFlagOneHitKill = v;
+    dxct_log("oneHitKill=%d", v);
+}
+
+int dxct_get_one_hit_kill(void) {
+    return gFlagOneHitKill;
+}
+
+void dxct_set_god_mode(int v) {
+    gFlagGodMode = v;
+    dxct_log("godMode=%d", v);
+}
+
+int dxct_get_god_mode(void) {
+    return gFlagGodMode;
+}
