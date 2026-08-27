@@ -1,18 +1,19 @@
 # Build artifacts
 *.dylib
+*.a
+*.o
+*.dSYM/
+
+# Xcode
+*.xcworkspace/
+*.xcodeproj/
 build/
+DerivedData/
 
-# IPA and game files
-app/
-
-# Large binary files
-*.ipa
-*.xcframework
-
-# IDE
-.vscode/
-.idea/
-
-# OS files
+# macOS
 .DS_Store
-Thumbs.db
+*.swp
+*~
+
+# Logs
+*.log

@@ -1,4 +1,4 @@
-name: Build DXCT GM Hook
+name: Build DXCT GM Hook (秒杀+无敌)
 
 on:
   push:
@@ -10,31 +10,43 @@ jobs:
     runs-on: macos-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Build dylib
       run: |
+        echo "=== Building dxctx_gm.dylib ==="
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        echo "Building with: $SDK"
+        MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
+        echo "SDK: $SDK"
+        echo "Min version: $MIN_VER"
         
         clang \
           -arch arm64 \
           -isysroot "$SDK" \
           -iframework "$SDK/System/Library/Frameworks" \
+          -iframework "$SDK/Library/Frameworks" \
           -I src \
           -O2 \
+          -mios-version-min=$MIN_VER \
+          -fobjc-arc \
           -framework JavaScriptCore \
+          -framework UIKit \
+          -framework Foundation \
           -dynamiclib \
           -o dxctx_gm.dylib \
           src/Inject.jsb.c \
           -Wl,-install_name,@rpath/dxctx_gm.dylib
         
-        echo "=== Build Success ==="
+        echo "=== Build Result ==="
         file dxctx_gm.dylib
         lipo -info dxctx_gm.dylib
-    
-    - name: Upload
+        ls -lh dxctx_gm.dylib
+        nm -U dxctx_gm.dylib | grep " T " | head -20
+        
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: dxctx_gm
         path: dxctx_gm.dylib
+        retention-days: 30
