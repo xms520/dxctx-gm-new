@@ -491,9 +491,10 @@ void dxct_eval_js(const char *js_code) {
     if (exc) {
         JSStringRef es = JSValueToStringCopy(ctx, exc, NULL);
         if (es) {
-            const char *m = JSStringGetUTF8CString(es);
-            dxct_log("eval_js error: %s", m ? m : "?");
-            if (m) JSStringRelease(es);
+            char buf[512];
+            JSStringGetUTF8CString(es, buf, sizeof(buf));
+            dxct_log("eval_js error: %s", buf);
+            JSStringRelease(es);
         }
     }
 }
