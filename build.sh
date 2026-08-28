@@ -28,6 +28,7 @@ clang \
   -dynamiclib \
   -o dxctx_gm.dylib \
   src/Inject.jsb.c \
+  src/fishhook.c \
   src/Overlay.m \
   -Wl,-install_name,@rpath/dxctx_gm.dylib \
   -mios-version-min=$MIN_VER

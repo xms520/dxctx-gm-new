@@ -9,6 +9,7 @@
 #include <string.h>
 #include <pthread.h>
 #include "gm_overlay.h"
+#include "fishhook.h"
 #include <JavaScriptCore/JSStringRef.h>
 
 #define LOG_TAG "[DXCT-GM]"
@@ -38,7 +39,7 @@ void dxct_set_god_mode(int v) { gFlagGodMode = v; }
 int dxct_get_god_mode(void) { return gFlagGodMode; }
 
 // JSEvaluateScript hook
-static JSContextRef (*orig_JSEvaluateScript)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *);
+static JSValueRef (*orig_JSEvaluateScript)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *);
 static JSContextRef gCachedContext = NULL;
 static pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int gInjected = 0;
@@ -53,7 +54,7 @@ int dxct_run_js(const char *jsExpression) {
     JSStringRef s = JSStringCreateWithUTF8CString(jsExpression);
     if (!s) return 0;
     JSValueRef exc = NULL;
-    JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
+    orig_JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
     if (exc) dxct_log("run_js error: %s", jsExpression);
     JSStringRelease(s);
     return 1;
@@ -69,7 +70,7 @@ int dxct_eval_bool(const char *jsExpression) {
     JSStringRef s = JSStringCreateWithUTF8CString(jsExpression);
     if (!s) return -1;
     JSValueRef exc = NULL;
-    JSValueRef v = JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
+    JSValueRef v = orig_JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
     int r = -1;
     if (v && !exc && JSValueIsBoolean(ctx, v)) {
         r = (int)JSValueToBoolean(ctx, v);
@@ -220,7 +221,7 @@ static const char *gm_script_parts[] __attribute__((used)) = {
     NULL
 };
 
-static JSContextRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObjectRef thisObject, JSStringRef sourceURL, int lineNumber, JSStringRef *exception) {
+static JSValueRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObjectRef thisObject, JSStringRef sourceURL, int lineNumber, JSStringRef *exception) {
     if (!gCachedContext && ctx) {
         pthread_mutex_lock(&gLock);
         if (!gCachedContext) {
@@ -244,12 +245,15 @@ static JSContextRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JS
                         JSStringRef s = JSStringCreateWithUTF8CString(content);
                         if (s) {
                             JSValueRef exc = NULL;
-                            JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
+                            orig_JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
                             if (exc) dxct_log("[DXCT] External script error");
                             JSStringRelease(s);
                         }
                         free(content);
                     }
+                    dxct_log("[DXCT] External script evaluated");
+                    gInjected = 1;
+                    dxct_show_overlay();
                     pthread_mutex_unlock(&gLock);
                     goto call_orig;
                 }
@@ -272,7 +276,7 @@ static JSContextRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JS
                 JSStringRef s = JSStringCreateWithUTF8CString(fullScript);
                 if (s) {
                     JSValueRef exc = NULL;
-                    JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
+                    orig_JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
                     if (exc) dxct_log("[DXCT] Embedded script error at line %d", lineNumber);
                     JSStringRelease(s);
                 }
@@ -304,10 +308,17 @@ void dylib_init() {
 
     void *jc = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
     if (jc) {
-        orig_JSEvaluateScript = (JSContextRef (*)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *))
+        orig_JSEvaluateScript = (JSValueRef (*)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *))
             dlsym(jc, "JSEvaluateScript");
         if (orig_JSEvaluateScript) {
             dxct_log("[DXCT] Found JSEvaluateScript at %p", orig_JSEvaluateScript);
+            struct rebinding binding = {
+                "JSEvaluateScript",
+                (void *)my_JSEvaluateScript,
+                (void **)&orig_JSEvaluateScript
+            };
+            int rc = rebind_symbols(&binding, 1);
+            dxct_log("[DXCT] JSEvaluateScript hook installed, rc=%d", rc);
         } else {
             dxct_log("[DXCT] Failed to find JSEvaluateScript");
         }

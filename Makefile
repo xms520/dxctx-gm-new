@@ -20,7 +20,7 @@ LDFLAGS  = -framework JavaScriptCore \
            -framework QuartzCore \
            -dynamiclib -Wl,-install_name,@rpath/dxctx_gm.dylib
 
-SRCS_C   = src/Inject.jsb.c
+SRCS_C   = src/Inject.jsb.c src/fishhook.c
 SRCS_M   = src/Overlay.m
 OUT      = dxctx_gm.dylib
 
