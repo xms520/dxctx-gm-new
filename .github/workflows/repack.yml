@@ -1,0 +1,50 @@
+name: Repack IPA (硬注入GM dylib)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: 'IPA 下载直链 (为空的自动从 Release 拉取)'
+        required: false
+        default: ''
+
+jobs:
+  repack:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: 准备输入 (dylib + ipa)
+      run: |
+        mkdir -p input output
+        # dylib: 用当前仓库编译, 或直接取已构建成品
+        # 直接用 Actions 编译 dylib 保证最新
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        clang -arch arm64 -isysroot "$SDK" -iframework "$SDK/System/Library/Frameworks" \
+          -iframework "$SDK/Library/Frameworks" -Isrc -O2 -mios-version-min=15.0 \
+          -fobjc-arc -ObjC -framework JavaScriptCore -framework UIKit -framework Foundation \
+          -framework QuartzCore -dynamiclib -o input/dxctx_gm.dylib \
+          src/Inject.jsb.c src/Overlay.m -Wl,-install_name,@rpath/dxctx_gm.dylib
+        echo "dylib OK: $(ls -lh input/dxctx_gm.dylib | awk '{print $5}')"
+
+        # 获取 ipa
+        if [ -n "${{ inputs.ipa_url }}" ]; then
+          curl -sL "${{ inputs.ipa_url }}" -o input/game.ipa
+        else
+          # 从最新 Release 拉取 (需先手动上传)
+          echo "请先上传 IPA 到 GitHub Release 或提供 ipa_url"
+          exit 1
+        fi
+        echo "ipa OK: $(ls -lh input/game.ipa | awk '{print $5}')"
+
+    - name: 硬注入并重打包
+      run: |
+        chmod +x scripts/repack_ipa.sh
+        ./scripts/repack_ipa.sh "$(pwd)/input" "$(pwd)/output"
+
+    - name: 上传 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dxctx_gm_injected_ipa
+        path: output/dxctx_gm_injected.ipa
+        retention-days: 30
