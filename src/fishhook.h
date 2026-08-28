@@ -3,6 +3,7 @@
 #define fishhook_h
 
 #include <stddef.h>
+#include <stdint.h>
 
 struct rebinding {
   const char* name;
