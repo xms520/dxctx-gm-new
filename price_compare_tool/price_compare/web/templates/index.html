@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>电商价格采集对比工具</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f7fa;--card:#fff;--ink:#1f2d3d;--muted:#7a8499;
+    --jd:#e1251b;--tb:#ff7300;--pdd:#e2231a;--line:#e4e9f2;
+    --green:#2ecc71;--amber:#f5a623;--red:#e74c3c;--blue:#4a90e2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6}
+  header{background:linear-gradient(135deg,#2b3a67,#4a5fc1);color:#fff;padding:22px 28px}
+  header h1{margin:0;font-size:22px;font-weight:700}
+  header p{margin:4px 0 0;opacity:.85;font-size:13px}
+  .wrap{max-width:1240px;margin:0 auto;padding:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 12px;font-size:16px;border-left:3px solid var(--blue);
+    padding-left:9px}
+  /* 控制条 */
+  .ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .ctrl input[type=text]{flex:1;min-width:200px;padding:9px 12px;border:1px solid var(--line);
+    border-radius:8px;font-size:14px}
+  .ctrl .chk{display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer}
+  .ctrl .chk input{accent-color:var(--blue)}
+  button{cursor:pointer;border:none;border-radius:8px;padding:9px 18px;font-size:14px;
+    font-weight:600;transition:.15s}
+  .btn-run{background:var(--blue);color:#fff}
+  .btn-run:hover{background:#3a7fd0}
+  .btn-run:disabled{opacity:.55;cursor:not-allowed}
+  #status{font-size:13px;color:var(--muted)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:12px;font-weight:600}
+  .pill-rec{background:#e8f9ef;color:#1a7d43}
+  .pill-mid{background:#fdf2dc;color:#a96b00}
+  .pill-high{background:#fdeaea;color:#9b1f1f}
+  /* 摘要卡片 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:12px}
+  .stat .lbl{font-size:12px;color:var(--muted)}
+  .stat .val{font-size:20px;font-weight:700;margin-top:3px}
+  .plat-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+    border-bottom:1px dashed var(--line)}
+  .plat-row:last-child{border-bottom:none}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:#f7f9fc;color:var(--muted);font-weight:600;position:sticky;top:0}
+  tbody tr:hover{background:#f7f9fc}
+  td.num,th.num{text-align:right}
+  td.title{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tbl-wrap{max-height:440px;overflow:auto}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .chart{height:300px}
+  @media(max-width:820px){.charts{grid-template-columns:1fr}}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--muted);font-size:13px}
+  .badge-tag{font-size:11px;color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px}
+  .empty{color:var(--muted);text-align:center;padding:30px;font-size:14px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>电商商品价格自动化采集与对比工具</h1>
+  <p>京东 · 淘宝 · 拼多多 多平台批量采集 → 清洗去重 → 价格排序 → 横向对比 → 性价比推荐</p>
+</header>
+
+<div class="wrap">
+  <!-- 运行控制 -->
+  <div class="card">
+    <h2>采集运行</h2>
+    <div class="ctrl">
+      <input type="text" id="keyword" placeholder="输入商品关键词, 如: 手机 / 蓝牙耳机 / 机械键盘" value="手机">
+      <label class="chk"><input type="checkbox" id="plat-jd" checked> 京东</label>
+      <label class="chk"><input type="checkbox" id="plat-tb" checked> 淘宝</label>
+      <label class="chk"><input type="checkbox" id="plat-pdd" checked> 拼多多</label>
+      <label class="chk"><input type="checkbox" id="mock" checked> Mock演示</label>
+      <button class="btn-run" id="runBtn" onclick="runSearch()">运行采集</button>
+      <span id="status"></span>
+    </div>
+    <div class="hint">说明: 未注入登录 Cookie 时, 京东走真实搜索页解析, 淘宝/拼多多命中登录墙自动回退演示数据。勾选 Mock 可强制使用稳定演示数据。</div>
+  </div>
+
+  <!-- 对比摘要 -->
+  <div class="card">
+    <h2>横向对比摘要</h2>
+    <div id="summary"><div class="empty">运行采集或查看下方示例</div></div>
+  </div>
+
+  <!-- 结果表格 -->
+  <div class="card">
+    <h2>商品列表 <span class="hint" id="listHint"></span></h2>
+    <div class="tbl-wrap">
+      <table id="resultTable">
+        <thead><tr>
+          <th>#</th><th>平台</th><th>商品名称</th>
+          <th class="num">价格</th><th class="num">销量</th>
+          <th class="num">店铺评分</th><th>性价比</th><th>店铺</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 图表 -->
+  <div class="card">
+    <h2>数据可视化</h2>
+    <div class="charts">
+      <div id="chart-platform" class="chart"></div>
+      <div id="chart-scatter" class="chart"></div>
+      <div id="chart-value" class="chart"></div>
+      <div id="chart-trend" class="chart"></div>
+    </div>
+  </div>
+
+  <!-- 原始采集示例 -->
+  <div class="card">
+    <h2>采集原始数据示例</h2>
+    <div class="hint">下方为工具采集到的原始字段样例 (未经清洗), 供理解数据来源。</div>
+    <details open>
+      <summary>展开原始采集数据</summary>
+      <div class="tbl-wrap" style="max-height:300px;margin-top:8px">
+        <table id="rawTable">
+          <thead><tr>
+            <th>平台</th><th>商品名称</th><th class="num">原始价格</th>
+            <th class="num">原始销量</th><th>店铺</th><th>链接</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+const PLAT = {jd:{name:"京东",color:"#e1251b"},taobao:{name:"淘宝",color:"#ff7300"},pdd:{name:"拼多多",color:"#e2231a"}};
+const TAG = {"性价比推荐":"pill-rec","适中":"pill-mid","偏高":"pill-high"};
+const INIT_SAMPLE = {{ sample|safe }};
+
+let charts = {};
+function ensureCharts(){
+  ["chart-platform","chart-scatter","chart-value","chart-trend"].forEach(id=>{
+    if(!charts[id] && document.getElementById(id))
+      charts[id] = echarts.init(document.getElementById(id));
+  });
+}
+window.addEventListener("resize",()=>{Object.values(charts).forEach(c=>c&&c.resize())});
+
+function fmtPrice(v){return "¥"+Number(v).toLocaleString("zh",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtSales(n){n=Number(n);return n>=10000?(n/10000).toFixed(1)+"万":n;}
+function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function renderTable(products){
+  const tb = document.querySelector("#resultTable tbody"); tb.innerHTML="";
+  if(!products.length){tb.innerHTML='<tr><td colspan="8" class="empty">无数据</td></tr>';return;}
+  products.forEach((p,i)=>{
+    const tag = p.value_tag?`<span class="pill ${TAG[p.value_tag]||"pill-mid"}">${p.value_tag}</span>`:"";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i+1}</td>
+      <td><span class="dot" style="background:${PLAT[p.platform]?.color||'#888'}"></span>${PLAT[p.platform]?.name||p.platform}</td>
+      <td class="title" title="${esc(p.title)}">${esc(p.title)}</td>
+      <td class="num">${fmtPrice(p.price)}</td>
+      <td class="num">${fmtSales(p.sales)}</td>
+      <td class="num">${p.shop_rating??"-"}</td>
+      <td>${tag}</td>
+      <td>${esc(p.shop_name||"")}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function renderSummary(cmp, keyword){
+  const el = document.getElementById("summary");
+  if(!cmp||!cmp.overall){el.innerHTML='<div class="empty">无对比数据</div>';return;}
+  const o = cmp.overall;
+  let stats = `<div class="stats">
+    <div class="stat"><div class="lbl">关键词</div><div class="val" style="font-size:16px">${esc(keyword)}</div></div>
+    <div class="stat"><div class="lbl">商品总数</div><div class="val">${o.count}</div></div>
+    <div class="stat"><div class="lbl">最低价</div><div class="val" style="color:var(--green)">${fmtPrice(o.min_price)}</div></div>
+    <div class="stat"><div class="lbl">最高价</div><div class="val" style="color:var(--red)">${fmtPrice(o.max_price)}</div></div>
+    <div class="stat"><div class="lbl">均价</div><div class="val">${fmtPrice(o.avg_price)}</div></div>
+    <div class="stat"><div class="lbl">中位价</div><div class="val">${fmtPrice(o.median_price)}</div></div>
+    <div class="stat"><div class="lbl">总销量</div><div class="val">${fmtSales(o.total_sales)}</div></div>
+    <div class="stat"><div class="lbl">平均店铺评分</div><div class="val">${o.avg_rating??"-"}</div></div>
+  </div>`;
+  let rows = "";
+  Object.keys(cmp.per_platform).sort().forEach(plat=>{
+    const s = cmp.per_platform[plat];
+    rows += `<div class="plat-row">
+      <span><span class="dot" style="background:${PLAT[plat]?.color||'#888'}"></span>${PLAT[plat]?.name||plat}</span>
+      <span><b>${s.count}</b> 件 · 最低 ${fmtPrice(s.min_price)} · 均价 ${fmtPrice(s.avg_price)} · 中位 ${fmtPrice(s.median_price)} · 评分 ${s.avg_rating??"-"}</span>
+    </div>`;
+  });
+  el.innerHTML = stats + `<div style="margin-top:14px">${rows}</div>`;
+}
+
+function renderCharts(products, cmp){
+  ensureCharts();
+  // 1) 各平台均价/中位价 柱状
+  const plats = Object.keys(cmp.per_platform).sort();
+  charts["chart-platform"].setOption({
+    title:{text:"各平台均价 / 中位价",left:"center",textStyle:{fontSize:14}},
+    tooltip:{trigger:"axis"},
+    legend:{bottom:0},
+    grid:{left:50,right:20,top:40,bottom:35},
+    xAxis:{type:"category",data:plats.map(p=>PLAT[p]?.name||p)},
+    yAxis:{type:"value",name:"元"},
+    series:[
+      {name:"均价",type:"bar",data:plats.map(p=>cmp.per_platform[p].avg_price),itemStyle:{color:"#4a90e2"}},
+      {name:"中位价",type:"bar",data:plats.map(p=>cmp.per_platform[p].median_price),itemStyle:{color:"#f5a623"}}
+    ]
+  });
+  // 2) 价格-销量 散点
+  const series = {};
+  products.forEach(p=>{
+    (series[p.platform]=series[p.platform]||[]).push([p.price,p.sales]);
+  });
+  charts["chart-scatter"].setOption({
+    title:{text:"价格 - 销量 分布",left:"center",textStyle:{fontSize:14}},
+    tooltip:{trigger:"item",formatter:p=>`价格 ${fmtPrice(p.value[0])}<br>销量 ${fmtSales(p.value[1])}`},
+    legend:{bottom:0},
+    grid:{left:60,right:20,top:40,bottom:35},
+    xAxis:{name:"价格(元)",type:"value"},
+    yAxis:{name:"销量",type:"value"},
+    series:Object.keys(series).map(plat=>({name:PLAT[plat]?.name||plat,type:"scatter",
+      data:series[plat],itemStyle:{color:PLAT[plat]?.color||'#888'}}))
+  });
+  // 3) 性价比 Top10
+  const top = [...products].sort((a,b)=>(b.value_score||0)-(a.value_score||0)).slice(0,10).reverse();
+  const tcolors = top.map(p=>({"性价比推荐":"#2ecc71","适中":"#f5a623","偏高":"#e74c3c"}[p.value_tag]||"#999"));
+  charts["chart-value"].setOption({
+    title:{text:"性价比 Top 10",left:"center",textStyle:{fontSize:14}},
+    tooltip:{trigger:"y",formatter:p=>`${p.name}<br>评分 ${(p.value).toFixed(3)}`},
+    grid:{left:110,right:30,top:40,bottom:20},
+    xAxis:{type:"value",max:1},
+    yAxis:{type:"category",data:top.map(p=>(p.title||"").slice(0,14)+(p.title.length>14?"…":""))},
+    series:[{type:"bar",data:top.map(p=>({value:p.value_score||0,itemStyle:{color:tcolors[top.indexOf(p)]}}))}]
+  });
+  // 4) 价格阶梯趋势 (按价格升序排列的阶梯线)
+  const sorted = [...products].sort((a,b)=>a.price-b.price);
+  charts["chart-trend"].setOption({
+    title:{text:"价格阶梯分布 (按价格升序)",left:"center",textStyle:{fontSize:14}},
+    tooltip:{trigger:"axis",formatter:ps=>ps.map(x=>`${x.name}<br>价格 ${fmtPrice(x.value)}`).join("<br>")},
+    legend:{bottom:0,data:plats.map(p=>PLAT[p]?.name||p)},
+    grid:{left:60,right:20,top:40,bottom:35},
+    xAxis:{name:"商品序号(按价格升序)",type:"category",data:sorted.map((_,i)=>i+1)},
+    yAxis:{name:"价格(元)",type:"value"},
+    series:plats.map(plat=>{const ps=sorted.filter(p=>p.platform===plat);let k=0;
+      return{name:PLAT[plat]?.name||plat,type:"line",step:"right",symbol:"none",
+        data:sorted.map(p=>p.platform===plat?p.price:(ps[k]?null:(null))),
+        connectNulls:false,itemStyle:{color:PLAT[plat]?.color||'#888'}};})
+  });
+}
+
+function applyResult(result){
+  renderTable(result.products||[]);
+  renderSummary(result.comparison||{}, result.keyword);
+  document.getElementById("listHint").textContent = `共 ${result.total||0} 件 (采集 ${result.raw_count||0} · 已清洗去重排序)`;
+  renderCharts(result.products||[], result.comparison||{});
+}
+
+function renderRaw(raw){
+  const tb=document.querySelector("#rawTable tbody");tb.innerHTML="";
+  (raw||[]).slice(0,30).forEach(p=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><span class="dot" style="background:${PLAT[p.platform]?.color||'#888'}"></span>${PLAT[p.platform]?.name||p.platform}</td>
+      <td class="title" title="${esc(p.title)}">${esc(p.title)}</td>
+      <td class="num">${typeof p.price==="string"?esc(p.price):fmtPrice(p.price)}</td>
+      <td class="num">${esc(String(p.sales))}</td>
+      <td>${esc(p.shop_name||"")}</td>
+      <td><a href="${esc(p.url)}" target="_blank" style="color:var(--blue);font-size:12px">链接</a></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+async function runSearch(){
+  const kw=document.getElementById("keyword").value.trim();
+  if(!kw){alert("请输入关键词");return;}
+  const plats=["jd","taobao","pdd"].filter(p=>document.getElementById("plat-"+({jd:"jd",taobao:"tb",pdd:"pdd"}[p])).checked);
+  const mock=document.getElementById("mock").checked;
+  const btn=document.getElementById("runBtn");const st=document.getElementById("status");
+  btn.disabled=true;st.textContent="采集中…";
+  try{
+    const url=`/api/search?keyword=${encodeURIComponent(kw)}&mock=${mock?1:0}&${plats.map(p=>"p="+p).join("&")}`;
+    const res=await fetch(url);
+    const data=await res.json();
+    if(data.error){st.textContent="失败: "+data.error;return;}
+    st.textContent="完成 ✓";applyResult(data);
+  }catch(e){st.textContent="请求失败: "+e;}
+  finally{btn.disabled=false;}
+}
+
+// 初始化: 加载内置示例
+window.addEventListener("DOMContentLoaded",()=>{
+  ensureCharts();
+  if(INIT_SAMPLE.result){applyResult(INIT_SAMPLE.result);}
+  if(INIT_SAMPLE.raw_sample){renderRaw(INIT_SAMPLE.raw_sample);}
+  document.getElementById("status").textContent="已载入示例数据 ✓";
+});
+</script>
+</body>
+</html>
