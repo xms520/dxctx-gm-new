@@ -1,12 +1,16 @@
-name: Repack IPA (硬注入GM dylib)
+name: Re-pack IPA (硬注入 GM dylib)
+
+# 用法: 先把手动编译好的 dxctx_gm.dylib 放到 repo src 同级(见下面),
+# 再手动 Run workflow, 填写 ipa_url 为游戏 IPA 的直链下载地址。
+# 云端会自动: 编译 dylib -> 解包 IPA -> insert_dylib 硬注入主二进制
+#           -> 移除旧签名 -> 重打包成 dxctx_gm_injected.ipa 返回
 
 on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: 'IPA 下载直链 (为空的自动从 Release 拉取)'
-        required: false
-        default: ''
+        description: '游戏 IPA 下载直链 (必填, 如 Release/网盘直链)'
+        required: true
 
 jobs:
   repack:
@@ -14,33 +18,95 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: 准备输入 (dylib + ipa)
+    - name: 环境准备
       run: |
+        set -e
         mkdir -p input output
-        # dylib: 用当前仓库编译, 或直接取已构建成品
-        # 直接用 Actions 编译 dylib 保证最新
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        clang -arch arm64 -isysroot "$SDK" -iframework "$SDK/System/Library/Frameworks" \
-          -iframework "$SDK/Library/Frameworks" -Isrc -O2 -mios-version-min=15.0 \
-          -fobjc-arc -ObjC -framework JavaScriptCore -framework UIKit -framework Foundation \
-          -framework QuartzCore -dynamiclib -o input/dxctx_gm.dylib \
-          src/Inject.jsb.c src/Overlay.m -Wl,-install_name,@rpath/dxctx_gm.dylib
-        echo "dylib OK: $(ls -lh input/dxctx_gm.dylib | awk '{print $5}')"
 
-        # 获取 ipa
-        if [ -n "${{ inputs.ipa_url }}" ]; then
-          curl -sL "${{ inputs.ipa_url }}" -o input/game.ipa
-        else
-          # 从最新 Release 拉取 (需先手动上传)
-          echo "请先上传 IPA 到 GitHub Release 或提供 ipa_url"
-          exit 1
-        fi
-        echo "ipa OK: $(ls -lh input/game.ipa | awk '{print $5}')"
-
-    - name: 硬注入并重打包
+    - name: 编译 GM dylib
       run: |
-        chmod +x scripts/repack_ipa.sh
-        ./scripts/repack_ipa.sh "$(pwd)/input" "$(pwd)/output"
+        set -e
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        clang -arch arm64 -isysroot "$SDK" \
+          -iframework "$SDK/System/Library/Frameworks" \
+          -iframework "$SDK/Library/Frameworks" \
+          -Isrc -O2 -mios-version-min=15.0 \
+          -fobjc-arc -ObjC \
+          -framework JavaScriptCore -framework UIKit -framework Foundation -framework QuartzCore \
+          -dynamiclib -o input/dxctx_gm.dylib \
+          src/Inject.jsb.c src/Overlay.m \
+          -Wl,-install_name,@rpath/dxctx_gm.dylib
+        echo "dylib: $(ls -lh input/dxctx_gm.dylib | awk '{print $5}')"
+
+    - name: 下载游戏 IPA
+      run: |
+        set -e
+        URL="${{ inputs.ipa_url }}"
+        echo "URL: ${URL:0:80}..."
+        curl -sL --retry 3 "$URL" -o input/game.ipa
+        ls -lh input/game.ipa
+
+    - name: 编译 insert_dylib 并注入重打包
+      run: |
+        set -e
+        # 1) 编译 insert_dylib
+        git clone --depth 1 https://github.com/Matchluck/insert_dylib.git /tmp/id 2>/dev/null || \
+        git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id 2>/dev/null
+        (cd /tmp/id && make) 2>/dev/null || (cd /tmp/id && xcodebuild -scheme insert_dylib -configuration Release build 2>/dev/null) || true
+        INS=$(find /tmp/id -type f -name "insert_dylib" -perm -111 2>/dev/null | head -1)
+        if [ -n "$INS" ]; then cp "$INS" /tmp/insert_dylib && chmod +x /tmp/insert_dylib; echo "insert_dylib ready"; else echo "NO_INS"; fi
+
+        # 2) 解包
+        mkdir -p Work && cd Work
+        unzip -o -q ../input/game.ipa
+        cd ..
+        APP=$(find Work -maxdepth 2 -type d -name "*.app" | head -1)
+        echo "APP=$APP"
+        EXEC=$(python3 -c "import plistlib,sys; print(plistlib.load(open('$APP/Info.plist','rb')).get('CFBundleExecutable','xkcg-mobile'))")
+
+        # 3) 放置 dylib
+        mkdir -p "$APP/Frameworks"
+        cp input/dxctx_gm.dylib "$APP/Frameworks/dxctx_gm.dylib"
+
+        # 4) 硬注入 load command (优先 insert_dylib)
+        INJECTED=""
+        if [ -x /tmp/insert_dylib ]; then
+          /tmp/insert_dylib --weakall @rpath/dxctx_gm.dylib "$APP/$EXEC" "$APP/${EXEC}_x2" && mv "$APP/${EXEC}_x2" "$APP/$EXEC" && INJECTED=yes
+        fi
+        # 退回 LSEnvironment
+        if [ -z "$INJECTED" ]; then
+          python3 - <<PY
+import plistlib
+p="$APP/Info.plist"
+with open(p,'rb') as f: d=plistlib.load(f)
+d.setdefault('LSEnvironment',{})['DYLD_INSERT_LIBRARIES']='@rpath/dxctx_gm.dylib'
+with open(p,'wb') as f: plistlib.dump(d,f)
+print('fallback LSEnvironment')
+PY
+          INJECTED=LSEnv
+        fi
+        echo "INJECTED=$INJECTED"
+        otool -l "$APP/$EXEC" | grep -A2 dxctx_gm.dylib || echo "(otool 未显示注入)"
+        # ls -lh Frameworks 确认
+
+        # 5) 移除旧签名
+        rm -rf "$APP/_CodeSignature"
+        rm -f "$APP/embedded.mobileprovision"
+        codesign --remove-signature "$APP/$EXEC" 2>/dev/null || true
+
+        # 6) 重打包
+        (cd Work && zip -qry ../output/dxctx_gm_injected.ipa Payload)
+        ls -lh output/dxctx_gm_injected.ipa
+
+    - name: 验证载荷
+      run: |
+        echo "=== 注入后 IPA 内 Frameworks 与 plist 检查 ==="
+        mkdir -p v && cd v && unzip -o -q ../output/dxctx_gm_injected.ipa
+        APP=$(find . -type d -name "*.app")
+        echo "$APP"
+        ls -lh "$APP/Frameworks/"
+        echo "--- Info.plist LSEnvironment ---"
+        python3 -c "import plistlib; print(plistlib.load(open('$APP/Info.plist','rb')).get('LSEnvironment'))"
 
     - name: 上传 artifact
       uses: actions/upload-artifact@v4
