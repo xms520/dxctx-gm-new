@@ -91,14 +91,7 @@ jobs:
           /tmp/insert_dylib --weakall @rpath/dxctx_gm.dylib "$APP/$EXEC" "$APP/${EXEC}_x2" && mv "$APP/${EXEC}_x2" "$APP/$EXEC" && INJECTED=loadcmd
         fi
         if [ -z "$INJECTED" ]; then
-          python3 - <<PY
-import plistlib
-p="$APP/Info.plist"
-with open(p,'rb') as f: d=plistlib.load(f)
-d.setdefault('LSEnvironment',{})['DYLD_INSERT_LIBRARIES']='@rpath/dxctx_gm.dylib'
-with open(p,'wb') as f: plistlib.dump(d,f)
-print('回退 LSEnvironment 写入')
-PY
+          python3 -c "import plistlib; p='$APP/Info.plist'; f=open(p,'rb'); d=plistlib.load(f); f.close(); d.setdefault('LSEnvironment',{})['DYLD_INSERT_LIBRARIES']='@rpath/dxctx_gm.dylib'; f=open(p,'wb'); plistlib.dump(d,f); f.close(); print('回退 LSEnvironment 写入')"
           INJECTED=LSEnv
         fi
         echo "注入方式=$INJECTED"
