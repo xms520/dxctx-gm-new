@@ -51,5 +51,3 @@ jobs:
         name: dxctx_gm_v3_panel
         path: dxctx_gm.dylib
         retention-days: 30
-
-        retention-days: 30
