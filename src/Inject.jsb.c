@@ -305,6 +305,8 @@ void dylib_init() {
     }
 
     dxct_log("[DXCT] dylib loaded, initializing...");
+    // Show a load diagnostic independently of the JS engine hook.
+    dxct_show_overlay();
 
     void *jc = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
     if (jc) {

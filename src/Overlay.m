@@ -233,9 +233,30 @@ void dxct_show_overlay(void) {
         if (gUIShown) return;
 
         @try {
-            if (!gWin) {
-                gWin = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            UIWindowScene *scene = nil;
+            for (UIScene *candidate in [UIApplication sharedApplication].connectedScenes) {
+                if ([candidate isKindOfClass:[UIWindowScene class]] &&
+                    candidate.activationState == UISceneActivationStateForegroundActive) {
+                    scene = (UIWindowScene *)candidate;
+                    break;
+                }
             }
+            if (!scene) {
+                for (UIScene *candidate in [UIApplication sharedApplication].connectedScenes) {
+                    if ([candidate isKindOfClass:[UIWindowScene class]]) {
+                        scene = (UIWindowScene *)candidate;
+                        break;
+                    }
+                }
+            }
+            if (!gWin) {
+                gWin = scene ? [[UIWindow alloc] initWithWindowScene:scene]
+                             : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            }
+            if (scene && gWin.windowScene != scene) {
+                gWin.windowScene = scene;
+            }
+            gWin.frame = scene ? scene.coordinateSpace.bounds : [UIScreen mainScreen].bounds;
             if (!gVC) {
                 gVC = [[GMOverlayVC alloc] initWithNibName:nil bundle:nil];
             }
