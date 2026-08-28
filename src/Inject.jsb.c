@@ -39,7 +39,7 @@ void dxct_set_god_mode(int v) { gFlagGodMode = v; }
 int dxct_get_god_mode(void) { return gFlagGodMode; }
 
 // JSEvaluateScript hook
-static JSValueRef (*orig_JSEvaluateScript)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *);
+static JSValueRef (*orig_JSEvaluateScript)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSValueRef *);
 static JSContextRef gCachedContext = NULL;
 static pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int gInjected = 0;
