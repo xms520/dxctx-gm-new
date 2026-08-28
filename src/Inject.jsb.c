@@ -221,7 +221,7 @@ static const char *gm_script_parts[] __attribute__((used)) = {
     NULL
 };
 
-static JSValueRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObjectRef thisObject, JSStringRef sourceURL, int lineNumber, JSStringRef *exception) {
+static JSValueRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JSObjectRef thisObject, JSStringRef sourceURL, int lineNumber, JSValueRef *exception) {
     if (!gCachedContext && ctx) {
         pthread_mutex_lock(&gLock);
         if (!gCachedContext) {
@@ -308,7 +308,7 @@ void dylib_init() {
 
     void *jc = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW);
     if (jc) {
-        orig_JSEvaluateScript = (JSValueRef (*)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSStringRef *))
+        orig_JSEvaluateScript = (JSValueRef (*)(JSContextRef, JSStringRef, JSObjectRef, JSStringRef, int, JSValueRef *))
             dlsym(jc, "JSEvaluateScript");
         if (orig_JSEvaluateScript) {
             dxct_log("[DXCT] Found JSEvaluateScript at %p", orig_JSEvaluateScript);
