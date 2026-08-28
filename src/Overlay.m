@@ -31,6 +31,20 @@ static void olog(const char *fmt, ...) {
 }
 
 // =========================================================================
+// Overlay window forwards touches outside the panel to the game window.
+// =========================================================================
+@interface DXCTOverlayWindow : UIWindow
+@end
+
+@implementation DXCTOverlayWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    if (hit == self || hit == self.rootViewController.view) return nil;
+    return hit;
+}
+@end
+
+// =========================================================================
 // GM Overlay ViewController (负责承载面板与按钮)
 // =========================================================================
 @interface GMOverlayVC : UIViewController
@@ -222,7 +236,7 @@ static void olog(const char *fmt, ...) {
 // =========================================================================
 
 static GMOverlayVC *gVC = nil;
-static UIWindow *gWin = nil;
+static DXCTOverlayWindow *gWin = nil;
 static BOOL gUIShown = NO;
 
 void dxct_show_overlay(void) {
@@ -250,8 +264,8 @@ void dxct_show_overlay(void) {
                 }
             }
             if (!gWin) {
-                gWin = scene ? [[UIWindow alloc] initWithWindowScene:scene]
-                             : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+                gWin = scene ? [[DXCTOverlayWindow alloc] initWithWindowScene:scene]
+                             : [[DXCTOverlayWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
             }
             if (scene && gWin.windowScene != scene) {
                 gWin.windowScene = scene;
@@ -264,7 +278,9 @@ void dxct_show_overlay(void) {
             gWin.rootViewController = gVC;
             gWin.backgroundColor = [UIColor clearColor];
             gWin.hidden = NO;
-            [gWin makeKeyAndVisible];
+            // Do not steal key-window status from the game's login UI.
+            [gWin setHidden:NO];
+            [gWin setUserInteractionEnabled:YES];
             gUIShown = YES;
             olog("Overlay shown");
         } @catch (NSException *e) {
