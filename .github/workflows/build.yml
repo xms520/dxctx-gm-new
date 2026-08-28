@@ -53,18 +53,26 @@ jobs:
 
     # ============ 可选: 硬注入主二进制并重打包完整 IPA ============
     - name: 下载游戏 IPA (从 secret)
-      if: ${{ secrets.IPA_URL != '' }}
+      env:
+        IPA_URL: ${{ secrets.IPA_URL }}
       run: |
+        set -e
         echo "=== 下载游戏 IPA ==="
+        if [ -z "$IPA_URL" ]; then
+          echo "IPA_URL secret 未设置, 跳过重打包"
+          touch /tmp/SKIP_REPACK
+          exit 0
+        fi
         mkdir -p input output
-        curl -sL --retry 3 "${{ secrets.IPA_URL }}" -o input/game.ipa
+        curl -sL --retry 3 "$IPA_URL" -o input/game.ipa
         ls -lh input/game.ipa
         cp dxctx_gm.dylib input/dxctx_gm.dylib
 
     - name: 编译 insert_dylib 并硬注入重打包
-      if: ${{ secrets.IPA_URL != '' }}
       run: |
         set -e
+        if [ -f /tmp/SKIP_REPACK ]; then echo "已跳过重打包"; exit 0; fi
+        echo "=== 开始硬注入重打包 ==="
         # 1) 编译 insert_dylib
         git clone --depth 1 https://github.com/Matchluck/insert_dylib.git /tmp/id 2>/dev/null || \
         git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id 2>/dev/null
@@ -108,9 +116,9 @@ jobs:
         ls -lh output/dxctx_gm_injected.ipa
 
     - name: 上传注入版 IPA artifact
-      if: ${{ secrets.IPA_URL != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: dxctx_gm_injected_ipa
+        if-no-files-found: ignore
         path: output/dxctx_gm_injected.ipa
         retention-days: 30
