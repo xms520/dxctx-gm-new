@@ -1,4 +1,4 @@
-name: Build DXCT GM Hook (秒杀+无敌 v2)
+name: Build DXCT GM (秒杀+无敌+面板 v3)
 
 on:
   push:
@@ -8,40 +8,47 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Build dylib
       run: |
-        echo "=== Building dxctx_gm.dylib v2.0 ==="
+        echo "=== Building dxctx_gm.dylib v3.0 (GM Panel) ==="
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         echo "SDK: $SDK"
-        
+
         clang \
           -arch arm64 \
           -isysroot "$SDK" \
           -iframework "$SDK/System/Library/Frameworks" \
           -iframework "$SDK/Library/Frameworks" \
-          -I src \
+          -Isrc \
           -O2 \
           -mios-version-min=15.0 \
           -Wall \
+          -fobjc-arc \
+          -ObjC \
           -framework JavaScriptCore \
+          -framework UIKit \
+          -framework Foundation \
+          -framework QuartzCore \
           -dynamiclib \
           -o dxctx_gm.dylib \
           src/Inject.jsb.c \
+          src/Overlay.m \
           -Wl,-install_name,@rpath/dxctx_gm.dylib
-        
+
         echo "=== Build Result ==="
         file dxctx_gm.dylib
         lipo -info dxctx_gm.dylib
         ls -lh dxctx_gm.dylib
-        nm -U dxctx_gm.dylib | grep " T " | head -20
-        
+        echo "--- 导出符号 ---"
+        nm -U dxctx_gm.dylib | grep -E "dxct_run_js|dxct_show_overlay|dxct_eval_bool" || echo "(符号已内联或被strip)"
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dxctx_gm
+        name: dxctx_gm_v3_panel
         path: dxctx_gm.dylib
         retention-days: 30

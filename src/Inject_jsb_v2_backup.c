@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-#include "gm_overlay.h"
-#include <JavaScriptCore/JSStringRef.h>
 
 #define LOG_TAG "[DXCT-GM]"
 #define GM_SCRIPT_ENV "DXCT_JS_FILE"
@@ -42,43 +40,6 @@ static JSContextRef (*orig_JSEvaluateScript)(JSContextRef, JSStringRef, JSObject
 static JSContextRef gCachedContext = NULL;
 static pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int gInjected = 0;
-
-// ===== 桥接: 供 Overlay.m 调用, 在缓存的 JSContext 上执行 JS =====
-// 返回 1 表示已执行, 0 表示 JS 上下文未就绪
-int dxct_run_js(const char *jsExpression) {
-    if (!jsExpression || !gCachedContext || !gInjected) {
-        return 0;
-    }
-    JSContextRef ctx = gCachedContext;
-    JSStringRef s = JSStringCreateWithUTF8CString(jsExpression);
-    if (!s) return 0;
-    JSValueRef exc = NULL;
-    JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
-    if (exc) dxct_log("run_js error: %s", jsExpression);
-    JSStringRelease(s);
-    return 1;
-}
-
-int dxct_js_ready(void) {
-    return (gCachedContext != NULL && gInjected) ? 1 : 0;
-}
-
-int dxct_eval_bool(const char *jsExpression) {
-    if (!jsExpression || !gCachedContext || !gInjected) return -1;
-    JSContextRef ctx = gCachedContext;
-    JSStringRef s = JSStringCreateWithUTF8CString(jsExpression);
-    if (!s) return -1;
-    JSValueRef exc = NULL;
-    JSValueRef v = JSEvaluateScript(ctx, s, NULL, NULL, 0, &exc);
-    int r = -1;
-    if (v && !exc && JSValueIsBoolean(ctx, v)) {
-        r = (int)JSValueToBoolean(ctx, v);
-    }
-    if (exc) dxct_log("eval_bool error");
-    JSStringRelease(s);
-    return r;
-}
-// ===== 桥接结束 =====
 
 // GM脚本 - 使用属性防止优化器移除
 static const char *gm_script_parts[] __attribute__((used)) = {
@@ -280,8 +241,6 @@ static JSContextRef my_JSEvaluateScript(JSContextRef ctx, JSStringRef script, JS
             }
             dxct_log("[DXCT] GM injected, oneHitKill:%d godMode:%d", gFlagOneHitKill, gFlagGodMode);
             gInjected = 1;
-            // 在主线程显示 GM 调试面板
-            dxct_show_overlay();
         }
         pthread_mutex_unlock(&gLock);
     }

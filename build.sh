@@ -1,19 +1,16 @@
 #!/bin/bash
-# 编译脚本 - dxctx_gm.dylib
+# 编译脚本 - dxctx_gm.dylib v3 (GM 调试面板)
 # 需要 macOS + Xcode
-
 set -e
 
-echo "=== DXCT GM Hook Compiler ==="
+echo "=== DXCT GM Hook Compiler (v3 Panel) ==="
 
-# 获取 SDK 路径
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 MIN_VER=$(xcrun --sdk iphoneos --show-sdk-version)
 
 echo "SDK: $SDK"
 echo "Min Version: $MIN_VER"
 
-# 编译
 clang \
   -arch arm64 \
   -isysroot "$SDK" \
@@ -22,18 +19,22 @@ clang \
   -I . \
   -O2 \
   -Wall \
+  -fobjc-arc \
+  -ObjC \
   -framework JavaScriptCore \
+  -framework UIKit \
+  -framework Foundation \
+  -framework QuartzCore \
   -dynamiclib \
   -o dxctx_gm.dylib \
-  fishhook.c \
-  Inject.jsb.c \
+  src/Inject.jsb.c \
+  src/Overlay.m \
   -Wl,-install_name,@rpath/dxctx_gm.dylib \
   -mios-version-min=$MIN_VER
 
 echo "=== Compilation Complete ==="
 echo "Output: dxctx_gm.dylib"
 
-# 验证
 echo ""
 echo "=== Verification ==="
 file dxctx_gm.dylib

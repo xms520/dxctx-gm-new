@@ -1,4 +1,4 @@
-# Makefile - dxctx_gm for iOS arm64
+# Makefile - dxctx_gm (带 GM 调试面板) for iOS arm64
 # Build: make SDK_PATH=<xcode sdk path>
 # Or use GitHub Actions
 
@@ -11,19 +11,26 @@ CFLAGS   = -arch $(ARCH) -isysroot "$(SDK_PATH)" \
            -iframework "$(SDK_PATH)/Library/Frameworks" \
            -Isrc -O2 -mios-version-min=15.0 -Wall
 
+# Objective-C 需要 -fobjc-arc 与 -ObjC, 链接 UIKit/Foundation
+OBJC_FLAGS = -fobjc-arc -ObjC
+
 LDFLAGS  = -framework JavaScriptCore \
+           -framework UIKit \
+           -framework Foundation \
+           -framework QuartzCore \
            -dynamiclib -Wl,-install_name,@rpath/dxctx_gm.dylib
 
-SRCS     = src/Inject.jsb.c
+SRCS_C   = src/Inject.jsb.c
+SRCS_M   = src/Overlay.m
 OUT      = dxctx_gm.dylib
 
 .PHONY: all clean
 
 all: $(OUT)
 
-$(OUT): $(SRCS)
-	@echo "=== Building dxctx_gm.dylib ==="
-	$(CLANG) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS)
+$(OUT): $(SRCS_C) $(SRCS_M)
+	@echo "=== Building dxctx_gm.dylib (v3.0 GM Panel) ==="
+	$(CLANG) $(CFLAGS) $(OBJC_FLAGS) $(LDFLAGS) -o $@ $(SRCS_C) $(SRCS_M)
 	@echo "=== OK ==="
 	@file $@ && lipo -info $@
 
