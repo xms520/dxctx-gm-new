@@ -52,6 +52,30 @@ jobs:
         retention-days: 30
 
     # ============ 可选: 硬注入主二进制并重打包完整 IPA ============
+    - name: 清理磁盘释放空间 (macOS runner 缓存)
+      run: |
+        echo "=== 磁盘清理前 ==="
+        df -h / | tail -1
+        # 删除 Xcode 缓存与无用数据 (macOS runner 标准清理)
+        sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes 2>/dev/null || true
+        sudo rm -rf /Users/runner/Library/Caches/pip 2>/dev/null || true
+        sudo rm -rf /Users/runner/.gradle/caches 2>/dev/null || true
+        sudo rm -rf /Users/runner/.m2/repository 2>/dev/null || true
+        sudo rm -rf /Users/runner/.npm/_cacache 2>/dev/null || true
+        sudo rm -rf /Users/runner/.cocoapods 2>/dev/null || true
+        sudo rm -rf /Users/runner/Library/Developer/Xcode/DerivedData 2>/dev/null || true
+        sudo rm -rf /Users/runner/Library/Developer/CoreSimulator/Caches 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/Platforms/WatchSimulator.platform 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/Platforms/TVSimulator.platform 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/Platforms/AppleTVSimulator.platform 2>/dev/null || true
+        # 清理 Xcode 内嵌文档/符号 (大)
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/Documentation 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/Developer/usr/share 2>/dev/null || true
+        sudo rm -rf /Applications/Xcode.app/Contents/SharedFrameworks/DevToolsFoundation.framework 2>/dev/null || true
+        echo "=== 磁盘清理后 ==="
+        df -h / | tail -1
+
     - name: 下载游戏 IPA (从 secret)
       env:
         IPA_URL: ${{ secrets.IPA_URL }}
@@ -77,17 +101,19 @@ jobs:
         git clone --depth 1 https://github.com/Matchluck/insert_dylib.git /tmp/id 2>/dev/null || \
         git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id 2>/dev/null
         (cd /tmp/id && make) 2>/dev/null || (cd /tmp/id && xcodebuild -scheme insert_dylib -configuration Release build 2>/dev/null) || true
-        INS=$(find /tmp/id -type f -name "insert_dylib" -perm -111 2>/dev/null | head -1)
-        if [ -n "$INS" ]; then cp "$INS" /tmp/insert_dylib && chmod +x /tmp/insert_dylib; echo "insert_dylib ready"; else echo "NO_INS (将回退 LSEnvironment)"; fi
+        INS=$(find /tmp/id /Users/runner/Library/Developer/Xcode/DerivedData -type f -name "insert_dylib" -perm -111 2>/dev/null | head -1)
+        if [ -n "$INS" ]; then cp "$INS" /tmp/insert_dylib && chmod +x /tmp/insert_dylib; echo "insert_dylib ready: $INS"; else echo "NO_INS (将回退 LSEnvironment)"; fi
 
-        # 2) 解包
+        # 2) 解包 (用 ditto 更稳, 处理中文文件名与权限)
         mkdir -p Work && cd Work
-        unzip -o -q ../input/game.ipa
+        ditto -x -k ../input/game.ipa . 2>/dev/null || unzip -o -q ../input/game.ipa
         cd ..
         APP=$(find Work -maxdepth 2 -type d -name "*.app" | head -1)
         echo "APP=$APP"
         EXEC=$(python3 -c "import plistlib,sys; print(plistlib.load(open('$APP/Info.plist','rb')).get('CFBundleExecutable','xkcg-mobile'))")
         echo "EXEC=$EXEC"
+        echo "--- 解包后磁盘 ---"
+        df -h / | tail -1
 
         # 3) 放置 dylib
         mkdir -p "$APP/Frameworks"
