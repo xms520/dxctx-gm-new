@@ -292,9 +292,11 @@ call_orig:
 
 __attribute__((constructor))
 void dylib_init() {
-    char *enable = getenv("DXCT_ENABLE");
-    if (!enable || strcmp(enable, "1") != 0) {
-        dxct_log("[DXCT] DXCT_ENABLE not set, skipping");
+    // v3.1: 默认开启注入, 无需 DXCT_ENABLE=1
+    // 仅当显式设置 DXCT_ENABLE=0 时才跳过 (便于特殊场景禁用)
+    char *disable = getenv("DXCT_ENABLE");
+    if (disable && strcmp(disable, "0") == 0) {
+        dxct_log("[DXCT] DXCT_ENABLE=0, skipping");
         return;
     }
 

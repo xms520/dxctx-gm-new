@@ -35,8 +35,10 @@ git push origin main
 ## 注入方式
 1. 下载 `dxctx_gm.dylib`（arm64, iOS 15.0+）
 2. 使用 **TrollStore / 全能签** 注入到已安装的「大侠闯天下」游戏
-3. 需要设置环境变量 `DXCT_ENABLE=1`
+3. **无需设置环境变量**（v3.1 默认开启）—— dylib 加载即自动注入并显示 GM 面板
 4. 进入游戏后屏幕左上角出现 GM 面板
+
+> 若需禁用: 设置 `DXCT_ENABLE=0` 环境变量则跳过注入
 
 ## 环境变量
 ```bash
