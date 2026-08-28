@@ -126,8 +126,8 @@ int dxct_eval_bool(const char *jsExpression) {
 
 // ===== ObjC Method Swizzle 实现 =====
 
-// 替换方法实现
-static JSValueRef dxct_swizzled_evaluateScript(id self, SEL _cmd, JSStringRef script) {
+// 传统 C 函数实现
+static JSValueRef dxct_evaluateScript_impl(id self, SEL _cmd, JSStringRef script) {
     // 获取 JSContextRef
     JSContextRef ctx = (__bridge JSContextRef)self;
 
@@ -175,8 +175,8 @@ void dylib_init() {
             orig_evaluateScriptIMP = (JSValueRef (*)(id, SEL, JSStringRef))method_getImplementation(m);
             dxct_log("[DXCT] Original ObjC evaluateScriptIMP: %p", orig_evaluateScriptIMP);
 
-            // 替换为新实现
-            method_setImplementation(m, imp_implementationWithBlock(dxct_swizzled_evaluateScript));
+            // 替换为新实现（使用传统 C 函数指针）
+            method_setImplementation(m, (IMP)dxct_evaluateScript_impl);
             dxct_log("[DXCT] ObjC evaluateScript: swizzled successfully");
         } else {
             dxct_log("[DXCT] evaluateScript: method not found on JSContext");
