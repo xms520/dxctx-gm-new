@@ -1,4 +1,4 @@
-name: Build DXCT GM (秒杀+无敌+面板 v3)
+name: Build DXCT GM (面板dylib + 可选重打包IPA)
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
 
     - name: Build dylib
       run: |
-        echo "=== Building dxctx_gm.dylib v3.0 (GM Panel) ==="
+        echo "=== Building dxctx_gm.dylib v3.1 ==="
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         echo "SDK: $SDK"
 
@@ -43,12 +43,81 @@ jobs:
         file dxctx_gm.dylib
         lipo -info dxctx_gm.dylib
         ls -lh dxctx_gm.dylib
-        echo "--- 导出符号 ---"
-        nm -U dxctx_gm.dylib | grep -E "dxct_run_js|dxct_show_overlay|dxct_eval_bool" || echo "(符号已内联或被strip)"
 
-    - name: Upload artifact
+    - name: Upload dylib artifact
       uses: actions/upload-artifact@v4
       with:
         name: dxctx_gm_v3_panel
         path: dxctx_gm.dylib
+        retention-days: 30
+
+    # ============ 可选: 硬注入主二进制并重打包完整 IPA ============
+    - name: 下载游戏 IPA (从 secret)
+      if: ${{ secrets.IPA_URL != '' }}
+      run: |
+        echo "=== 下载游戏 IPA ==="
+        mkdir -p input output
+        curl -sL --retry 3 "${{ secrets.IPA_URL }}" -o input/game.ipa
+        ls -lh input/game.ipa
+        cp dxctx_gm.dylib input/dxctx_gm.dylib
+
+    - name: 编译 insert_dylib 并硬注入重打包
+      if: ${{ secrets.IPA_URL != '' }}
+      run: |
+        set -e
+        # 1) 编译 insert_dylib
+        git clone --depth 1 https://github.com/Matchluck/insert_dylib.git /tmp/id 2>/dev/null || \
+        git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id 2>/dev/null
+        (cd /tmp/id && make) 2>/dev/null || (cd /tmp/id && xcodebuild -scheme insert_dylib -configuration Release build 2>/dev/null) || true
+        INS=$(find /tmp/id -type f -name "insert_dylib" -perm -111 2>/dev/null | head -1)
+        if [ -n "$INS" ]; then cp "$INS" /tmp/insert_dylib && chmod +x /tmp/insert_dylib; echo "insert_dylib ready"; else echo "NO_INS (将回退 LSEnvironment)"; fi
+
+        # 2) 解包
+        mkdir -p Work && cd Work
+        unzip -o -q ../input/game.ipa
+        cd ..
+        APP=$(find Work -maxdepth 2 -type d -name "*.app" | head -1)
+        echo "APP=$APP"
+        EXEC=$(python3 -c "import plistlib,sys; print(plistlib.load(open('$APP/Info.plist','rb')).get('CFBundleExecutable','xkcg-mobile'))")
+        echo "EXEC=$EXEC"
+
+        # 3) 放置 dylib
+        mkdir -p "$APP/Frameworks"
+        cp input/dxctx_gm.dylib "$APP/Frameworks/dxctx_gm.dylib"
+
+        # 4) 硬注入 load command
+        INJECTED=""
+        if [ -x /tmp/insert_dylib ]; then
+          /tmp/insert_dylib --weakall @rpath/dxctx_gm.dylib "$APP/$EXEC" "$APP/${EXEC}_x2" && mv "$APP/${EXEC}_x2" "$APP/$EXEC" && INJECTED=loadcmd
+        fi
+        if [ -z "$INJECTED" ]; then
+          python3 - <<PY
+import plistlib
+p="$APP/Info.plist"
+with open(p,'rb') as f: d=plistlib.load(f)
+d.setdefault('LSEnvironment',{})['DYLD_INSERT_LIBRARIES']='@rpath/dxctx_gm.dylib'
+with open(p,'wb') as f: plistlib.dump(d,f)
+print('回退 LSEnvironment 写入')
+PY
+          INJECTED=LSEnv
+        fi
+        echo "注入方式=$INJECTED"
+        echo "--- 验证 (otool) ---"
+        otool -l "$APP/$EXEC" | grep -A2 dxctx_gm.dylib || echo "(otool 未显示注入)"
+
+        # 5) 移除旧签名
+        rm -rf "$APP/_CodeSignature"
+        rm -f "$APP/embedded.mobileprovision"
+        codesign --remove-signature "$APP/$EXEC" 2>/dev/null || true
+
+        # 6) 重打包
+        (cd Work && zip -qry ../output/dxctx_gm_injected.ipa Payload)
+        ls -lh output/dxctx_gm_injected.ipa
+
+    - name: 上传注入版 IPA artifact
+      if: ${{ secrets.IPA_URL != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: dxctx_gm_injected_ipa
+        path: output/dxctx_gm_injected.ipa
         retention-days: 30
